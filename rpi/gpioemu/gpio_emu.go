@@ -37,7 +37,7 @@ package gpioemu
 
 import (
 	"fmt"
-	"github.com/womat/golib.git/pkg/rpi"
+	"github.com/womat/golib/rpi"
 	"sync"
 	"time"
 )

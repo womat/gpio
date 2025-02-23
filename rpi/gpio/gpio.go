@@ -34,7 +34,7 @@ package gpio
 import (
 	"fmt"
 	gpiod "github.com/warthog618/go-gpiocdev"
-	"github.com/womat/golib.git/pkg/rpi"
+	"github.com/womat/golib/rpi"
 	"sync"
 	"time"
 )
