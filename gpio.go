@@ -4,44 +4,64 @@
 // It defines event types for rising and falling edges, an Event struct with timestamps,
 // and a common interface (Pin) interacting with GPIO lines (Pins).
 //
-// Example usage:
+// # Example Usage
 //
-//	package main
+//	 package main
 //
-//	import (
-//	    "fmt"
-//	    "time"
+//	 import (
+//	     "fmt"
+//	     "log"
+//	     "time"
 //
-//	    "github.com/womat/golib/gpio"
-//	    "github.com/womat/golib/gpio/gpioemu" // example backend
-//	)
+//	     "github.com/womat/golib/gpio"
+//	     "github.com/womat/golib/rpi"
+//	 )
 //
-//	func main() {
-//	    // Create a GPIO pin using an emulated backend
-//	    gpioDevice, err := gpioemu.NewPort(17, time.Millisecond*100)
-//	    if err != nil {
-//	        panic(err)
-//	    }
-//	    defer gpioDevice.Close()
+//	 func main() {
+//		    // Create a GPIO pin using an emulated backend
+//		    gpioDevice, err := gpioemu.NewPort(17)
+//	     if err != nil {
+//	         log.Fatal(err)
+//	     }
+//	     defer gpioPin.Close()
 //
-//	    var gpioPin gpio.Pin = gpioDevice
+//	     // Configure as output and set high
+//	     if err := gpioPin.SetMode(gpio.Output); err != nil {
+//	         log.Fatal(err)
+//	     }
+//	     if err := gpioPin.SetValue(gpio.High); err != nil {
+//	         log.Fatal(err)
+//	     }
 //
-//	    // Set pin as output and write High
-//	    gpioPin.SetMode(gpio.Output)
-//	    gpioPin.SetValue(gpio.High)
+//	     // Configure as input with pull-up
+//	     if err := gpioPin.SetMode(gpio.Input); err != nil {
+//	         log.Fatal(err)
+//	     }
+//	     if err := gpioPin.SetPullMode(gpio.PullUp); err != nil {
+//	         log.Fatal(err)
+//	     }
 //
-//	    // Set pin as input with pull-up resistor
-//	    gpioPin.SetMode(gpio.Input)
-//	    gpioPin.SetPullMode(gpio.PullUp)
+//	     // Watch for rising and falling edges
+//	     events, err := gpioPin.Watch(gpio.RisingEdge | gpio.FallingEdge)
+//	     if err != nil {
+//	         log.Fatal(err)
+//	     }
 //
-//	    // Watch for events
-//	    gpioPin.WatchingEvents(func(evt gpio.Event) {
-//	        fmt.Println("GPIO Pin Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
-//	    })
+//	     // Consume events
+//	     go func() {
+//	         for evt := range events {
+//	             fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
+//	         }
+//	     }()
 //
-//	    // Keep running to catch events
-//	    time.Sleep(2 * time.Second)
-//	}
+//	     // Keep running for a while to catch events
+//	     time.Sleep(5 * time.Second)
+//
+//	     // Stop watching
+//	     if err := gpioPin.StopWatching(); err != nil {
+//	         log.Fatal(err)
+//	     }
+//	 }
 //
 // Note: This package does not interact with hardware directly but defines
 // the interface for GPIO event handling, allowing multiple implementations.
@@ -58,7 +78,7 @@ type Level int
 
 // Edge represents a signal transition detected on a GPIO Pin.
 // Low to High (RisingEdge) or from High to Low (FallingEdge).
-type Edge int
+type Edge uint8
 
 // PullMode defines the internal resistor configuration for an input Pin.
 type PullMode int
@@ -68,9 +88,9 @@ type Mode int
 
 const (
 	// FallingEdge indicates a transition from High to Low.
-	FallingEdge Edge = 0
+	FallingEdge Edge = 1 << iota
 	// RisingEdge indicates a transition from Low to High.
-	RisingEdge Edge = 1
+	RisingEdge
 
 	// High represents a logical high signal level.
 	High Level = 1
@@ -119,8 +139,9 @@ type Pin interface {
 	Info() string
 
 	// Events
-	WatchingEvents(f func(Event)) error
+	Watch(edges Edge) (<-chan Event, error)
 	StopWatching() error
+	DroppedEvents() uint64
 }
 
 // Stringer implementations
