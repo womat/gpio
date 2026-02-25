@@ -1,4 +1,4 @@
-module github.com/womat/golib/demo/listener
+module github.com/womat/golib/demo/manchaster_sender
 
 go 1.26
 

@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	gpioLine := flag.Int("gpioline", 17, "Number of GPIO-Pin")
+	gpioLine := flag.Int("gpioline", 20, "Number of GPIO-Pin")
 
 	edgeRising := flag.Bool("rising", false, "Listen to rising edges")
 	edgeFalling := flag.Bool("falling", false, "Listen to falling edges")
@@ -72,7 +72,13 @@ func main() {
 	log.Printf("GPIO Pin %d: %s", gpioPin.Number(), gpioPin.Info())
 	log.Printf("Listening on GPIO Pin %d, edge: %v, debounce: %dms", gpioPin.Number(), edge, *debounce)
 	//  Consume events
-	for evt := range events {
-		log.Printf("GPIO Event on pin %d: %s\tat %s", gpioPin.Number(), evt.Edge, evt.Time.Format("15:04:05.000000"))
+	for {
+		select {
+		case evt := <-events:
+			log.Printf("GPIO Event on pin %d: %s\tat %s", gpioPin.Number(), evt.Edge, evt.Time.Format("15:04:05.000000"))
+		case <-ctx.Done():
+			log.Println("Interrupt received, stopping GPIO watch...")
+			return
+		}
 	}
 }

@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	gpioLine := flag.Int("gpioline", 17, "Number of GPIO-Pin")
+	gpioLine := flag.Int("gpioline", 21, "Number of GPIO-Pin")
 	interval := flag.Int("interval", 1000, "Interval in milliseconds")
 	flag.Parse()
 
