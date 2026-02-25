@@ -1,58 +1,57 @@
-// Package gpio defines a generic interface for GPIO event handling on Raspberry Pi.
+// Package gpio defines a generic interface for GPIO pin configuration
+// and event handling (developed primary for Raspberry Pi).
 //
-// This package provides a standard Pin interface that can be implemented by different backends.
-// It defines event types for rising and falling edges, an Event struct with timestamps,
-// and a common interface (Pin) interacting with GPIO lines (Pins).
+// It provides a standard Pin interface that can be implemented by
+// different backends (e.g., hardware drivers, emulators, or mocks).
+//
+// The package defines signal levels, edge types, pull configurations,
+// and a unified event model for GPIO state changes.
+//
+// Note: This package does not interact with hardware directly.
+// It only defines the abstraction layer for GPIO implementations.
 //
 // # Example Usage
 //
-//	 func main() {
-//	     // Create a GPIO pin
-//	     gpioPin, err := gpioemu.NewPin(17)
-//	     if err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     defer gpioPin.Close()
+//	func main() {
+//	    // Create pin
+//	    pin, err := gpioemu.NewPin(17)
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
+//	    defer pin.Close()
 //
-//	     // Configure as output and set high
-//	     if err := gpioPin.SetMode(gpio.Output); err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     if err := gpioPin.SetValue(gpio.High); err != nil {
-//	         log.Fatal(err)
-//	     }
+//	    // Configure as output
+//	    if err := pin.SetMode(gpio.Output); err != nil {
+//	        log.Fatal(err)
+//	    }
+//	    if err := pin.SetValue(gpio.High); err != nil {
+//	        log.Fatal(err)
+//	    }
 //
-//	     // Configure as input with pull-up
-//	     if err := gpioPin.SetMode(gpio.Input); err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     if err := gpioPin.SetPullMode(gpio.PullUp); err != nil {
-//	         log.Fatal(err)
-//	     }
+//	    // Switch to input with pull-up
+//	    if err := pin.SetMode(gpio.Input); err != nil {
+//	        log.Fatal(err)
+//	    }
+//	    if err := pin.SetPullMode(gpio.PullUp); err != nil {
+//	        log.Fatal(err)
+//	    }
 //
-//			// Create a context to control watching lifetime
-//			ctx, cancel := context.WithCancel(context.Background())
-//			defer cancel()
+//	    ctx, cancel := context.WithCancel(context.Background())
+//	    defer cancel()
 //
-//			// Watch for rising and falling edges
-//	     events, err := gpioPin.Watch(ctx.gpio.RisingEdge | gpio.FallingEdge)
-//	     if err != nil {
-//	         log.Fatal(err)
-//	     }
+//	    events, err := pin.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
 //
-//	     // Consume events
-//	     go func() {
-//	         for evt := range events {
-//	             fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
-//	         }
-//	     }()
+//	    go func() {
+//	        for evt := range events {
+//	            fmt.Println(evt)
+//	        }
+//	    }()
 //
-//	     // Keep running for a while to catch events
-//	     time.Sleep(5 * time.Second)
-//
-//	     // Stop watching (optional)
-//	  	// cancel() // if you want to stop watching immediately
-//	 }
+//	    time.Sleep(5 * time.Second)
+//	}
 //
 // Note: This package does not interact with hardware directly but defines
 // the interface for GPIO event handling, allowing multiple implementations.
@@ -72,12 +71,11 @@ var ErrInvalidMode = errors.New("gpio: invalid mode")
 var ErrInvalidEdgeConfig = errors.New("gpio: invalid edge configuration")
 var ErrAlreadyWatching = errors.New("gpio: already watching")
 
-// Level represents the logical signal level of a GPIO Pin.
-// Typically, High or Low.
+// Level represents the logical signal level of a GPIO pin.
 type Level int
 
-// Edge represents a signal transition detected on a GPIO Pin.
-// Low to High (RisingEdge) or from High to Low (FallingEdge).
+// Edge represents one or more signal transitions detected on a GPIO pin.
+// It may contain RisingEdge, FallingEdge, or both.
 type Edge uint8
 
 // PullMode defines the internal resistor configuration for an input Pin.
@@ -108,21 +106,21 @@ const (
 )
 
 const (
-	// Input configures the GPIO Pin as input.
+	// Input configures the GPIO pin as input.
 	Input Mode = iota
-	// Output configures the GPIO Pin as output.
+	// Output configures the GPIO pin as output.
 	Output
 )
 
-// Event represents a state change event (RisingEdge or FallingEdge) on a GPIO Pin.
+// Event represents a detected edge transition on a GPIO pin.
 type Event struct {
 	Time time.Time // Time when the edge was detected.
 	Edge Edge      // Type of edge (RisingEdge or FallingEdge).
 }
 
-// Pin defines the interface for GPIO Pin operations.
+// Pin defines the interface for GPIO pin operations.
 type Pin interface {
-	// Close releases the GPIO Pin.
+	// Close releases the GPIO pin.
 	Close() error
 
 	// Value access
@@ -138,9 +136,21 @@ type Pin interface {
 	Number() int
 	Info() string
 
-	// Events
+	// Watch starts monitoring the pin for the specified edge transitions.
+	//
+	// The returned channel delivers Event values until:
+	//   - the provided context is canceled, or
+	//   - StopWatching is called, or
+	//   - an internal error occurs.
+	//
+	// Only one active watcher is allowed at a time.
+	// If watching is already active, ErrAlreadyWatching is returned.
 	Watch(ctx context.Context, edges Edge) (<-chan Event, error)
+	// StopWatching stops an active Watch operation.
+	// It is safe to call even if no watcher is active.
 	StopWatching() error
+	// DroppedEvents returns the number of events that were dropped
+	// due to internal buffering limits.
 	DroppedEvents() uint64
 }
 
@@ -171,7 +181,7 @@ func (l Level) String() string {
 func (e Edge) String() string {
 	switch e {
 	case 0:
-		return "None"
+		return "NoEdge"
 	}
 
 	var parts []string

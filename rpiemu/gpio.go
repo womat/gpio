@@ -93,6 +93,9 @@ type pin struct {
 // Compile-time check
 var _ gpio.Pin = (*pin)(nil)
 
+// defaultBufferSize defines the size of the buffered channel for GPIO events.
+const defaultBufferSize = 32
+
 // NewPin creates a new emulated GPIO pin.
 func NewPin(n int) (gpio.Pin, error) {
 	p := pin{
@@ -149,8 +152,13 @@ func (p *pin) SetValue(level gpio.Level) error {
 			edge = gpio.FallingEdge
 		}
 
+		ch := p.events
+		if ch == nil {
+			return nil
+		}
+
 		select {
-		case p.events <- gpio.Event{Time: now, Edge: edge}:
+		case ch <- gpio.Event{Time: now, Edge: edge}:
 			// successfully delivered
 		default:
 			// channel full → drop event
@@ -210,8 +218,8 @@ func (p *pin) Number() int {
 func (p *pin) Info() string {
 	p.Lock()
 	defer p.Unlock()
-	return fmt.Sprintf("gpioemu pin=%d mode=%s level=%s pull=%s debounce=%s",
-		p.pin, p.mode, p.state, p.pull, p.debounce)
+	return fmt.Sprintf("gpioemu pin=%d mode=%s level=%s pull=%s debounce=%s drops=%d",
+		p.pin, p.mode, p.state, p.pull, p.debounce, p.dropCount.Load())
 }
 
 // Watch enables edge detection and returns a channel for events.
@@ -230,7 +238,7 @@ func (p *pin) Watch(ctx context.Context, edges gpio.Edge) (<-chan gpio.Event, er
 
 	p.dropCount.Add(0)
 	p.edge = edges
-	p.events = make(chan gpio.Event, 8)
+	p.events = make(chan gpio.Event, defaultBufferSize)
 	return p.events, nil
 }
 

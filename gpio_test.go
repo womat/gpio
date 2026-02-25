@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-// mockPin is a minimal implementation for testing interface compliance.
+// mockPin exists solely to ensure that the Pin interface
+// is satisfied at compile time.
 type mockPin struct{}
 
 func (m *mockPin) Close() error                                      { return nil }

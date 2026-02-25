@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,9 +63,12 @@ func TestEdgeCallback(t *testing.T) {
 	}
 
 	// Consume events
+	var mu sync.Mutex
 	go func() {
 		for evt := range ch {
+			mu.Lock()
 			events = append(events, evt.Edge)
+			mu.Unlock()
 			fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
 		}
 	}()
@@ -129,9 +133,12 @@ func TestDebounce(t *testing.T) {
 	}
 
 	// Consume events
+	var mu sync.Mutex
 	go func() {
 		for evt := range ch {
+			mu.Lock()
 			events = append(events, evt.Edge)
+			mu.Unlock()
 			fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
 		}
 	}()
