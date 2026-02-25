@@ -6,20 +6,9 @@
 //
 // # Example Usage
 //
-//	 package main
-//
-//	 import (
-//	     "fmt"
-//	     "log"
-//	     "time"
-//
-//	     "github.com/womat/golib/gpio"
-//	     "github.com/womat/golib/rpi"
-//	 )
-//
 //	 func main() {
-//		    // Create a GPIO pin using an emulated backend
-//		    gpioDevice, err := gpioemu.NewPort(17)
+//	     // Create a GPIO pin
+//	     gpioPin, err := gpioemu.NewPin(17)
 //	     if err != nil {
 //	         log.Fatal(err)
 //	     }
@@ -41,8 +30,12 @@
 //	         log.Fatal(err)
 //	     }
 //
-//	     // Watch for rising and falling edges
-//	     events, err := gpioPin.Watch(gpio.RisingEdge | gpio.FallingEdge)
+//			// Create a context to control watching lifetime
+//			ctx, cancel := context.WithCancel(context.Background())
+//			defer cancel()
+//
+//			// Watch for rising and falling edges
+//	     events, err := gpioPin.Watch(ctx.gpio.RisingEdge | gpio.FallingEdge)
 //	     if err != nil {
 //	         log.Fatal(err)
 //	     }
@@ -57,10 +50,8 @@
 //	     // Keep running for a while to catch events
 //	     time.Sleep(5 * time.Second)
 //
-//	     // Stop watching
-//	     if err := gpioPin.StopWatching(); err != nil {
-//	         log.Fatal(err)
-//	     }
+//	     // Stop watching (optional)
+//	  	// cancel() // if you want to stop watching immediately
 //	 }
 //
 // Note: This package does not interact with hardware directly but defines
@@ -68,9 +59,18 @@
 package gpio
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
+
+var ErrInvalidLevel = fmt.Errorf("gpio: invalid level")
+var ErrInvalidPullMode = errors.New("gpio: invalid pull mode")
+var ErrInvalidMode = errors.New("gpio: invalid mode")
+var ErrInvalidEdgeConfig = errors.New("gpio: invalid edge configuration")
+var ErrAlreadyWatching = errors.New("gpio: already watching")
 
 // Level represents the logical signal level of a GPIO Pin.
 // Typically, High or Low.
@@ -139,7 +139,7 @@ type Pin interface {
 	Info() string
 
 	// Events
-	Watch(edges Edge) (<-chan Event, error)
+	Watch(ctx context.Context, edges Edge) (<-chan Event, error)
 	StopWatching() error
 	DroppedEvents() uint64
 }
@@ -157,8 +157,8 @@ func (m Mode) String() string {
 	}
 }
 
-func (m Level) String() string {
-	switch m {
+func (l Level) String() string {
+	switch l {
 	case High:
 		return "High"
 	case Low:
@@ -168,15 +168,25 @@ func (m Level) String() string {
 	}
 }
 
-func (m Edge) String() string {
-	switch m {
-	case FallingEdge:
-		return "Falling"
-	case RisingEdge:
-		return "Rising"
-	default:
+func (e Edge) String() string {
+	switch e {
+	case 0:
+		return "None"
+	}
+
+	var parts []string
+	if e&FallingEdge != 0 {
+		parts = append(parts, "Falling")
+	}
+	if e&RisingEdge != 0 {
+		parts = append(parts, "Rising")
+	}
+
+	if len(parts) == 0 {
 		return "Unknown"
 	}
+
+	return strings.Join(parts, "|")
 }
 
 func (p PullMode) String() string {
@@ -200,7 +210,7 @@ func (e Event) String() string {
 // Convenience methods on Event
 
 // IsRising returns true if the event is a RisingEdge.
-func (e Event) IsRising() bool { return e.Edge == RisingEdge }
+func (e Event) IsRising() bool { return e.Edge&RisingEdge != 0 }
 
 // IsFalling returns true if the event is a FallingEdge.
-func (e Event) IsFalling() bool { return e.Edge == FallingEdge }
+func (e Event) IsFalling() bool { return e.Edge&FallingEdge != 0 }

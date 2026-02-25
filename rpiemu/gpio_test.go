@@ -1,6 +1,9 @@
 package rpiemu
 
 import (
+	"context"
+	"fmt"
+	"log"
 	"testing"
 	"time"
 
@@ -48,10 +51,23 @@ func TestEdgeCallback(t *testing.T) {
 		t.Fatalf("SetMode failed: %v", err)
 	}
 
+	// Create a context to control watching lifetime
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var events []gpio.Edge
-	p.WatchingEvents(func(e gpio.Event) {
-		events = append(events, e.Edge)
-	})
+	ch, err := p.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Consume events
+	go func() {
+		for evt := range ch {
+			events = append(events, evt.Edge)
+			fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
+		}
+	}()
 
 	// Trigger Rising
 	p.SetValue(gpio.High)
@@ -69,7 +85,8 @@ func TestEdgeCallback(t *testing.T) {
 		t.Errorf("unexpected edge sequence: %v", events)
 	}
 
-	p.StopWatching()
+	// optional: cancel() if you want to stop watching immediately
+	// cancel()
 }
 
 func TestModeAndPull(t *testing.T) {
@@ -101,10 +118,23 @@ func TestDebounce(t *testing.T) {
 	// Setze Debounce auf 50ms
 	p.SetDebounce(50 * time.Millisecond)
 
+	// Create a context to control watching lifetime
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var events []gpio.Edge
-	p.WatchingEvents(func(e gpio.Event) {
-		events = append(events, e.Edge)
-	})
+	ch, err := p.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Consume events
+	go func() {
+		for evt := range ch {
+			events = append(events, evt.Edge)
+			fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
+		}
+	}()
 
 	// Flanken simulieren
 	p.SetValue(gpio.High) // erstes Event
@@ -131,5 +161,6 @@ func TestDebounce(t *testing.T) {
 		}
 	}
 
-	p.StopWatching()
+	// optional: cancel() if you want to stop watching immediately
+	// cancel()
 }
