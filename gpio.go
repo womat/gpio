@@ -39,7 +39,7 @@
 //	    ctx, cancel := context.WithCancel(context.Background())
 //	    defer cancel()
 //
-//	    events, err := pin.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+//	    events, err := pin.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
 //	    if err != nil {
 //	        log.Fatal(err)
 //	    }
@@ -136,7 +136,7 @@ type Pin interface {
 	Number() int
 	Info() string
 
-	// Watch starts monitoring the pin for the specified edge transitions.
+	// WatchCh starts monitoring the pin for the specified edge transitions.
 	//
 	// The returned channel delivers Event values until:
 	//   - the provided context is canceled, or
@@ -145,7 +145,8 @@ type Pin interface {
 	//
 	// Only one active watcher is allowed at a time.
 	// If watching is already active, ErrAlreadyWatching is returned.
-	Watch(ctx context.Context, edges Edge) (<-chan Event, error)
+	WatchCh(ctx context.Context, edges Edge) (<-chan Event, error)
+	WatchFunc(ctx context.Context, edges Edge, f func(event Event)) error
 	// StopWatching stops an active Watch operation.
 	// It is safe to call even if no watcher is active.
 	StopWatching() error
