@@ -64,7 +64,7 @@ func main() {
 	defer cancel()
 
 	// Watch for rising and falling edges
-	events, err := gpioPin.Watch(ctx, edge)
+	events, err := gpioPin.WatchCh(ctx, edge)
 	if err != nil {
 		log.Fatal(err)
 	}
