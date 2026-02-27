@@ -11,26 +11,28 @@ import (
 )
 
 func ExamplePort_usage() {
-	gpioPort, err := rpi.NewPin(17)
+	// Configure as output and set high
+	out, err := rpi.NewPin(17, rpi.WithMode(gpio.Output), rpi.WithPullup(gpio.PullUp))
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer gpioPort.Close()
+	defer out.Close()
 
-	// Configure as output and set high
-	gpioPort.SetMode(gpio.Output)
-	gpioPort.SetValue(gpio.High)
+	out.SetValue(gpio.High)
 
 	// Configure as input with pull-up
-	gpioPort.SetMode(gpio.Input)
-	gpioPort.SetPullMode(gpio.PullUp)
+	in, err := rpi.NewPin(18, rpi.WithMode(gpio.Input), rpi.WithPullup(gpio.PullUp), rpi.WithDebounce(10*time.Millisecond))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer in.Close()
 
 	// Create a context to control watching lifetime
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Watching events
-	ch, err := gpioPort.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	ch, err := in.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
 	if err != nil {
 		log.Fatal(err)
 	}

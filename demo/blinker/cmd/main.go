@@ -23,15 +23,11 @@ func main() {
 	interval := flag.Int("interval", 1000, "Interval in milliseconds")
 	flag.Parse()
 
-	gpioPin, err := rpi.NewPin(*gpioLine)
+	gpioPin, err := rpi.NewPin(*gpioLine, rpi.WithMode(gpio.Output))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer gpioPin.Close()
-
-	if err = gpioPin.SetMode(gpio.Output); err != nil {
-		log.Fatal(err)
-	}
 
 	log.Printf("GPIO Pin %d: %s", gpioPin.Number(), gpioPin.Info())
 

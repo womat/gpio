@@ -127,11 +127,6 @@ type Pin interface {
 	SetValue(level Level) error
 	Value() (Level, error)
 
-	// Configuration
-	SetMode(mode Mode) error
-	SetPullMode(mode PullMode) error
-	SetDebounce(d time.Duration) error
-
 	// Metadata
 	Number() int
 	Info() string

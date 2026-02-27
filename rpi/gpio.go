@@ -92,6 +92,8 @@ import (
 // Compile-time check
 var _ gpio.Pin = (*pin)(nil)
 
+type Option func(*pin, *[]gpiod.LineReqOption)
+
 // defaultBufferSize defines the size of the buffered channel for GPIO events.
 const defaultBufferSize = 32
 
@@ -115,23 +117,59 @@ type pin struct {
 // NewPin requests a GPIO line from the default chip and returns a gpio.Pin.
 //
 // The line is initially configured as input with edge detection disabled.
-func NewPin(n int) (gpio.Pin, error) {
+func NewPin(n int, opts ...Option) (gpio.Pin, error) {
 
 	p := &pin{
 		Mutex:    sync.Mutex{},
 		watching: atomic.Bool{},
 	}
 
-	line, err := gpiod.RequestLine(
-		Chip,
-		n,
+	gpioOpts := []gpiod.LineReqOption{
 		gpiod.WithEventHandler(p.handler), // install the internal edge handler
 		gpiod.WithoutEdges,                // start without edge detection
-		gpiod.AsInput)                     // default mode is input
+	}
+
+	for _, opt := range opts {
+		opt(p, &gpioOpts)
+	}
+
+	line, err := gpiod.RequestLine(Chip, n,
+		gpioOpts...)
 
 	p.watching.Store(false)
 	p.gpioLine = line
 	return p, err
+}
+
+func WithMode(m gpio.Mode) Option {
+	return func(p *pin, opts *[]gpiod.LineReqOption) {
+		switch m {
+		case gpio.Input:
+			*opts = append(*opts, gpiod.AsInput)
+		case gpio.Output:
+			*opts = append(*opts, gpiod.AsOutput())
+		}
+	}
+}
+
+func WithPullup(pull gpio.PullMode) Option {
+	return func(p *pin, opts *[]gpiod.LineReqOption) {
+		switch pull {
+		case gpio.PullUp:
+			*opts = append(*opts, gpiod.WithPullUp)
+		case gpio.PullDown:
+			*opts = append(*opts, gpiod.WithPullDown)
+		}
+	}
+}
+
+// WithDebounce configures hardware debounce for the GPIO Pin during line request.
+func WithDebounce(d time.Duration) Option {
+	return func(p *pin, opts *[]gpiod.LineReqOption) {
+		if d > 0 {
+			*opts = append(*opts, gpiod.WithDebounce(d))
+		}
+	}
 }
 
 // Close stops any active watcher, disables edge detection, and releases the line.
@@ -168,37 +206,6 @@ func (p *pin) SetValue(n gpio.Level) error {
 func (p *pin) Value() (gpio.Level, error) {
 	l, err := p.gpioLine.Value()
 	return gpio.Level(l), err
-}
-
-// SetMode configures the line as Input or Output.
-func (p *pin) SetMode(mode gpio.Mode) error {
-	switch mode {
-	case gpio.Input:
-		return p.gpioLine.Reconfigure(gpiod.WithoutEdges, gpiod.AsInput)
-	case gpio.Output:
-		return p.gpioLine.Reconfigure(gpiod.WithoutEdges, gpiod.AsOutput())
-	default:
-		return gpio.ErrInvalidMode
-	}
-}
-
-// SetPullMode configures the internal pull resistor of the GPIO Pin.
-func (p *pin) SetPullMode(mode gpio.PullMode) error {
-	switch mode {
-	case gpio.PullUp:
-		return p.gpioLine.Reconfigure(gpiod.WithPullUp)
-	case gpio.PullDown:
-		return p.gpioLine.Reconfigure(gpiod.WithPullDown)
-	case gpio.PullNone:
-		return nil
-	default:
-		return gpio.ErrInvalidPullMode
-	}
-}
-
-// SetDebounce configures hardware debounce for the GPIO Pin.
-func (p *pin) SetDebounce(t time.Duration) error {
-	return p.gpioLine.Reconfigure(gpiod.WithDebounce(t))
 }
 
 // Number returns the GPIO line offset (BCM number).

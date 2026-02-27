@@ -90,6 +90,8 @@ type pin struct {
 	callback  func(gpio.Event) // optional callback for edge events
 }
 
+type Option func(*pin)
+
 // Compile-time check
 var _ gpio.Pin = (*pin)(nil)
 
@@ -97,8 +99,8 @@ var _ gpio.Pin = (*pin)(nil)
 const defaultBufferSize = 32
 
 // NewPin creates a new emulated GPIO pin with default state (input, low, no pull).
-func NewPin(n int) (gpio.Pin, error) {
-	p := pin{
+func NewPin(n int, opts ...Option) (gpio.Pin, error) {
+	p := &pin{
 		pin:      n,
 		mode:     gpio.Input,
 		pull:     gpio.PullNone,
@@ -107,9 +109,13 @@ func NewPin(n int) (gpio.Pin, error) {
 		edge:     0,
 	}
 
+	for _, opt := range opts {
+		opt(p)
+	}
+
 	p.dropCount.Store(0)
 	p.watching.Store(false)
-	return &p, nil
+	return p, nil
 }
 
 // Close disables any active watchers and resets the pin state.
@@ -184,37 +190,39 @@ func (p *pin) Value() (gpio.Level, error) {
 	return p.state, nil
 }
 
-// SetMode sets the pin direction to Input or Output.
-func (p *pin) SetMode(mode gpio.Mode) error {
-	p.Lock()
-	defer p.Unlock()
+func WithMode(mode gpio.Mode) Option {
+	return func(p *pin) {
+		if mode != gpio.Input && mode != gpio.Output {
+			return
+		}
 
-	if mode != gpio.Input && mode != gpio.Output {
-		return gpio.ErrInvalidMode
+		p.Lock()
+		p.mode = mode
+		p.Unlock()
 	}
-
-	p.mode = mode
-	return nil
 }
 
-// SetPullMode sets the internal pull resistor of the pin (Up, Down, None).
-func (p *pin) SetPullMode(mode gpio.PullMode) error {
-	if mode != gpio.PullNone && mode != gpio.PullUp && mode != gpio.PullDown {
-		return gpio.ErrInvalidPullMode
-	}
+func WithPullup(pull gpio.PullMode) Option {
+	return func(p *pin) {
+		if pull != gpio.PullNone && pull != gpio.PullUp && pull != gpio.PullDown {
+			return
+		}
 
-	p.Lock()
-	defer p.Unlock()
-	p.pull = mode
-	return nil
+		p.Lock()
+		p.pull = pull
+		p.Unlock()
+	}
 }
 
-// SetDebounce sets the debounce duration for edge events.
-func (p *pin) SetDebounce(d time.Duration) error {
-	p.Lock()
-	defer p.Unlock()
-	p.debounce = d
-	return nil
+// WithDebounce configures hardware debounce for the GPIO Pin during line request.
+func WithDebounce(d time.Duration) Option {
+	return func(p *pin) {
+		if d > 0 {
+			p.Lock()
+			p.debounce = d
+			p.Unlock()
+		}
+	}
 }
 
 // Number returns the GPIO pin number.

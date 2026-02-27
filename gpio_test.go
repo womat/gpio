@@ -13,9 +13,6 @@ type mockPin struct{}
 func (m *mockPin) Close() error                                        { return nil }
 func (m *mockPin) SetValue(Level) error                                { return nil }
 func (m *mockPin) Value() (Level, error)                               { return Low, nil }
-func (m *mockPin) SetMode(Mode) error                                  { return nil }
-func (m *mockPin) SetPullMode(PullMode) error                          { return nil }
-func (m *mockPin) SetDebounce(time.Duration) error                     { return nil }
 func (m *mockPin) Number() int                                         { return 0 }
 func (m *mockPin) Info() string                                        { return "mock" }
 func (m *mockPin) WatchCh(context.Context, Edge) (<-chan Event, error) { return make(chan Event), nil }

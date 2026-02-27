@@ -12,17 +12,13 @@ import (
 )
 
 func TestSetValueAndValue(t *testing.T) {
-	p, _ := NewPin(17)
+	p, _ := NewPin(17, WithMode(gpio.Output),
+		WithPullup(gpio.PullUp))
 
 	// Standardwert sollte Low sein
 	val, _ := p.Value()
 	if val != gpio.Low {
 		t.Errorf("expected initial Low, got %v", val)
-	}
-
-	// Setze Output-Mode
-	if err := p.SetMode(gpio.Output); err != nil {
-		t.Fatalf("SetMode failed: %v", err)
 	}
 
 	// Setze High
@@ -47,8 +43,10 @@ func TestSetValueAndValue(t *testing.T) {
 }
 
 func TestEdgeCallback(t *testing.T) {
-	p, _ := NewPin(18)
-	if err := p.SetMode(gpio.Output); err != nil {
+	p, err := NewPin(18, WithMode(gpio.Input),
+		WithPullup(gpio.PullUp),
+		WithDebounce(10*time.Millisecond))
+	if err != nil {
 		t.Fatalf("SetMode failed: %v", err)
 	}
 
@@ -57,7 +55,7 @@ func TestEdgeCallback(t *testing.T) {
 	defer cancel()
 
 	var events []gpio.Edge
-	ch, err := p.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	ch, err := p.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -94,40 +92,29 @@ func TestEdgeCallback(t *testing.T) {
 }
 
 func TestModeAndPull(t *testing.T) {
-	p, _ := NewPin(19)
+	_, err := NewPin(19,
+		WithMode(gpio.Output),
+		WithPullup(gpio.PullUp))
 
-	if err := p.SetMode(gpio.Input); err != nil {
+	if err != nil {
 		t.Fatalf("SetMode failed: %v", err)
-	}
-
-	if err := p.SetPullMode(gpio.PullUp); err != nil {
-		t.Fatalf("SetPullMode PullUp failed: %v", err)
-	}
-
-	if err := p.SetPullMode(gpio.PullDown); err != nil {
-		t.Fatalf("SetPullMode PullDown failed: %v", err)
-	}
-
-	if err := p.SetPullMode(gpio.PullNone); err != nil {
-		t.Fatalf("SetPullMode PullNone failed: %v", err)
 	}
 }
 
 func TestDebounce(t *testing.T) {
-	p, _ := NewPin(20)
-	if err := p.SetMode(gpio.Output); err != nil {
+	p, err := NewPin(20,
+		WithMode(gpio.Output),
+		WithPullup(gpio.PullUp),
+		WithDebounce(50*time.Millisecond))
+	if err != nil {
 		t.Fatalf("SetMode failed: %v", err)
 	}
-
-	// Setze Debounce auf 50ms
-	p.SetDebounce(50 * time.Millisecond)
-
 	// Create a context to control watching lifetime
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var events []gpio.Edge
-	ch, err := p.Watch(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	ch, err := p.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
 	if err != nil {
 		log.Fatal(err)
 	}

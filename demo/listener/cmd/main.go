@@ -28,23 +28,15 @@ func main() {
 	debounce := flag.Int("debounce", 0, "Debounce in milliseconds")
 	flag.Parse()
 
-	gpioPin, err := rpi.NewPin(*gpioLine)
+	gpioPin, err := rpi.NewPin(*gpioLine,
+		rpi.WithMode(gpio.Input),
+		rpi.WithPullup(gpio.PullUp),
+		rpi.WithDebounce(time.Duration(*debounce)*time.Millisecond),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer gpioPin.Close()
-
-	if err = gpioPin.SetMode(gpio.Input); err != nil {
-		log.Fatal(err)
-	}
-	if err = gpioPin.SetPullMode(gpio.PullUp); err != nil {
-		log.Fatal(err)
-	}
-	if *debounce > 0 {
-		if err = gpioPin.SetDebounce(time.Duration(*debounce) * time.Millisecond); err != nil {
-			log.Fatal(err)
-		}
-	}
 
 	var edge gpio.Edge
 	switch {
