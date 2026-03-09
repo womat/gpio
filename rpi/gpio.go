@@ -13,18 +13,12 @@
 //
 // A Pin is safe for concurrent use.
 // Event delivery occurs asynchronously via the internal gpiod event handler.
-// When watching, a goroutine is started to stop the watcher when the context is cancelled.
 //
 // # Lifecycle
 //
 // A Pin must be closed after use by calling Close(). Closing the Pin
 // releases the underlying Line and disables event delivery.
 // Close is idempotent and may be called multiple times.
-//
-// # Requirements
-//
-// This package requires a Linux system with GPIO character device support
-// and the gpiod subsystem enabled.
 //
 // # Example Usage
 //
@@ -35,10 +29,7 @@
 //	    }
 //	    defer gpioPin.Close()
 //
-//	    ctx, cancel := context.WithCancel(context.Background())
-//	    defer cancel()
-//
-//	    events, err := gpioPin.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
+//	    events, err := gpioPin.WatchCh(gpio.RisingEdge|gpio.FallingEdge)
 //	    if err != nil {
 //	        log.Fatal(err)
 //	    }
@@ -50,7 +41,6 @@
 package rpi
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -202,15 +192,14 @@ func (p *pin) Info() string {
 // gpio.ErrAlreadyWatching is returned.
 //
 // The returned channel is closed when:
-//   - the context is cancelled
 //   - StopWatching is called
 //   - the pin is closed
 //
 // edges can be a combination of gpio.RisingEdge and gpio.FallingEdge.
 // Use the returned channel to consume events - unread events may be dropped
 // if the internal buffer (size 32) is full.
-func (p *pin) WatchCh(ctx context.Context, edges gpio.Edge) (<-chan gpio.Event, error) {
-	return p.startWatch(ctx, edges, nil)
+func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
+	return p.startWatch(edges, nil)
 }
 
 // WatchFunc starts monitoring the GPIO pin for edges and calls the provided callback.
@@ -221,8 +210,8 @@ func (p *pin) WatchCh(ctx context.Context, edges gpio.Edge) (<-chan gpio.Event, 
 // The callback is called asynchronously for each edge event.
 //
 // edges can be a combination of gpio.RisingEdge and gpio.FallingEdge.
-func (p *pin) WatchFunc(ctx context.Context, edges gpio.Edge, f func(event gpio.Event)) error {
-	_, err := p.startWatch(ctx, edges, f)
+func (p *pin) WatchFunc(edges gpio.Edge, f func(event gpio.Event)) error {
+	_, err := p.startWatch(edges, f)
 	return err
 }
 
@@ -230,7 +219,7 @@ func (p *pin) WatchFunc(ctx context.Context, edges gpio.Edge, f func(event gpio.
 //
 // If callback is nil, a channel is created and returned.
 // Otherwise, the callback is used for event delivery.
-func (p *pin) startWatch(ctx context.Context, edges gpio.Edge, callback func(gpio.Event)) (<-chan gpio.Event, error) {
+func (p *pin) startWatch(edges gpio.Edge, callback func(gpio.Event)) (<-chan gpio.Event, error) {
 	if !p.watching.CompareAndSwap(false, true) {
 		return nil, gpio.ErrAlreadyWatching
 	}
@@ -263,12 +252,6 @@ func (p *pin) startWatch(ctx context.Context, edges gpio.Edge, callback func(gpi
 		ch = make(chan gpio.Event, defaultBufferSize)
 		p.events = ch
 	}
-
-	// Start a goroutine to stop watching when the context is cancelled
-	go func() {
-		<-ctx.Done()
-		_ = p.stopWatchingInternal()
-	}()
 
 	return ch, nil
 }

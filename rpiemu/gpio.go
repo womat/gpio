@@ -65,7 +65,6 @@
 package rpiemu
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -239,7 +238,7 @@ func (p *pin) Info() string {
 }
 
 // WatchCh enables edge detection and returns a channel for events.
-func (p *pin) WatchCh(ctx context.Context, edges gpio.Edge) (<-chan gpio.Event, error) {
+func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
 	if !p.watching.CompareAndSwap(false, true) {
 		return nil, gpio.ErrAlreadyWatching
 	}
@@ -259,7 +258,7 @@ func (p *pin) WatchCh(ctx context.Context, edges gpio.Edge) (<-chan gpio.Event, 
 }
 
 // WatchFunc enables edge detection and registers a callback for events.
-func (p *pin) WatchFunc(ctx context.Context, edges gpio.Edge, f func(gpio.Event)) error {
+func (p *pin) WatchFunc(edges gpio.Edge, f func(gpio.Event)) error {
 	if !p.watching.CompareAndSwap(false, true) {
 		return gpio.ErrAlreadyWatching
 	}

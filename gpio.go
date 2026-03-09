@@ -58,7 +58,6 @@
 package gpio
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -140,8 +139,8 @@ type Pin interface {
 	//
 	// Only one active watcher is allowed at a time.
 	// If watching is already active, ErrAlreadyWatching is returned.
-	WatchCh(ctx context.Context, edges Edge) (<-chan Event, error)
-	WatchFunc(ctx context.Context, edges Edge, f func(event Event)) error
+	WatchCh(edges Edge) (<-chan Event, error)
+	WatchFunc(edges Edge, f func(event Event)) error
 	// StopWatching stops an active Watch operation.
 	// It is safe to call even if no watcher is active.
 	StopWatching() error
