@@ -44,7 +44,7 @@
 //			defer cancel()
 //
 //	     // Watch for rising and falling edges
-//	     events, err := gpioPin.WatchCh(ctx, gpio.RisingEdge | gpio.FallingEdge)
+//	     events, err := gpioPin.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
 //	     if err != nil {
 //	         log.Fatal(err)
 //	     }
