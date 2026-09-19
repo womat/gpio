@@ -1,7 +1,6 @@
 package gpio
 
 import (
-	"context"
 	"testing"
 	"time"
 )
@@ -10,15 +9,15 @@ import (
 // is satisfied at compile time.
 type mockPin struct{}
 
-func (m *mockPin) Close() error                                        { return nil }
-func (m *mockPin) SetValue(Level) error                                { return nil }
-func (m *mockPin) Value() (Level, error)                               { return Low, nil }
-func (m *mockPin) Number() int                                         { return 0 }
-func (m *mockPin) Info() string                                        { return "mock" }
-func (m *mockPin) WatchCh(context.Context, Edge) (<-chan Event, error) { return make(chan Event), nil }
-func (m *mockPin) WatchFunc(context.Context, Edge, func(Event)) error  { return nil }
-func (m *mockPin) StopWatching() error                                 { return nil }
-func (m *mockPin) DroppedEvents() uint64                               { return 0 }
+func (m *mockPin) Close() error                       { return nil }
+func (m *mockPin) SetValue(Level) error               { return nil }
+func (m *mockPin) Value() (Level, error)              { return Low, nil }
+func (m *mockPin) Number() int                        { return 0 }
+func (m *mockPin) Info() string                       { return "mock" }
+func (m *mockPin) WatchCh(Edge) (<-chan Event, error) { return make(chan Event), nil }
+func (m *mockPin) WatchFunc(Edge, func(Event)) error  { return nil }
+func (m *mockPin) StopWatching() error                { return nil }
+func (m *mockPin) DroppedEvents() uint64              { return 0 }
 
 // Compile-time check:
 var _ Pin = (*mockPin)(nil)

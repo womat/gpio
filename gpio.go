@@ -12,46 +12,27 @@
 //
 // # Example Usage
 //
-//	func main() {
-//	    // Create pin
-//	    pin, err := gpioemu.NewPin(17)
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    defer pin.Close()
-//
-//	    // Configure as output
-//	    if err := pin.SetMode(gpio.Output); err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    if err := pin.SetValue(gpio.High); err != nil {
-//	        log.Fatal(err)
-//	    }
-//
-//	    // Switch to input with pull-up
-//	    if err := pin.SetMode(gpio.Input); err != nil {
-//	        log.Fatal(err)
-//	    }
-//	    if err := pin.SetPullMode(gpio.PullUp); err != nil {
-//	        log.Fatal(err)
-//	    }
-//
-//	    ctx, cancel := context.WithCancel(context.Background())
-//	    defer cancel()
-//
-//	    events, err := pin.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
-//	    if err != nil {
-//	        log.Fatal(err)
-//	    }
-//
-//	    go func() {
-//	        for evt := range events {
-//	            fmt.Println(evt)
-//	        }
-//	    }()
-//
-//	    time.Sleep(5 * time.Second)
+//	// Pick a backend: rpi on a Raspberry Pi, rpiemu everywhere else.
+//	pin, err := rpiemu.NewPin(17,
+//	    rpiemu.WithMode(gpio.Input),
+//	    rpiemu.WithPullup(gpio.PullUp),
+//	)
+//	if err != nil {
+//	    log.Fatal(err)
 //	}
+//	defer pin.Close()
+//
+//	events, err := pin.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	for evt := range events {
+//	    fmt.Println(evt)
+//	}
+//
+// Mode, pull resistor and debounce are configured when the pin is requested,
+// through the options of the chosen backend; they cannot be changed afterwards.
 //
 // Note: This package does not interact with hardware directly but defines
 // the interface for GPIO event handling, allowing multiple implementations.
@@ -132,13 +113,12 @@ type Pin interface {
 
 	// WatchCh starts monitoring the pin for the specified edge transitions.
 	//
-	// The returned channel delivers Event values until:
-	//   - the provided context is canceled, or
-	//   - StopWatching is called, or
-	//   - an internal error occurs.
+	// The returned channel delivers Event values until StopWatching is called
+	// or the pin is closed, at which point the channel is closed.
 	//
-	// Only one active watcher is allowed at a time.
-	// If watching is already active, ErrAlreadyWatching is returned.
+	// Events are dropped when the consumer does not keep up; DroppedEvents
+	// reports how many. Only one active watcher is allowed at a time: if
+	// watching is already active, ErrAlreadyWatching is returned.
 	WatchCh(edges Edge) (<-chan Event, error)
 	WatchFunc(edges Edge, f func(event Event)) error
 	// StopWatching stops an active Watch operation.

@@ -5,66 +5,52 @@
 // including its mode (input/output), pull-up/down resistors, logical state,
 // edge events, and optional debounce timing.
 //
+// # Driving the line
+//
+// SetValue behaves like real hardware and only writes to output pins. To
+// exercise code that reacts to incoming edges, use Drive: it stands in for the
+// outside world and works on input pins as well. Drive is what makes the
+// emulator useful for testing receivers, such as a line decoder.
+//
 // # Concurrency
 //
-// A pin is safe for concurrent use. Event callbacks are executed asynchronously
-// in separate goroutines.
+// A pin is safe for concurrent use. Events are delivered by a single
+// goroutine, so a watcher observes the edges in the order they occurred.
 //
 // # Lifecycle
 //
-// A pin must be closed after use by calling Close(). This disables event callbacks.
+// A pin must be closed after use by calling Close(), which also stops an
+// active watcher and closes its event channel.
 //
 // # Example Usage
 //
-//	 func main() {
-//	     // Create a GPIO pin
-//	     gpioPin, err := rpiemu.NewPin(17)
-//	     if err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     defer gpioPin.Close()
+//	pin, err := rpiemu.NewPin(17,
+//	    rpiemu.WithMode(gpio.Input),
+//	    rpiemu.WithPullup(gpio.PullUp),
+//	)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer pin.Close()
 //
-//	     // Configure as output and set high
-//	     if err := gpioPin.SetMode(gpio.Output); err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     if err := gpioPin.SetValue(gpio.High); err != nil {
-//	         log.Fatal(err)
-//	     }
+//	events, err := pin.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
-//	     // Configure as input with pull-up
-//	     if err := gpioPin.SetMode(gpio.Input); err != nil {
-//	         log.Fatal(err)
-//	     }
-//	     if err := gpioPin.SetPullMode(gpio.PullUp); err != nil {
-//	         log.Fatal(err)
-//	     }
-//		 // Create a context to control watching lifetime
-//			ctx, cancel := context.WithCancel(context.Background())
-//			defer cancel()
+//	go func() {
+//	    for evt := range events {
+//	        fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
+//	    }
+//	}()
 //
-//	     // Watch for rising and falling edges
-//	     events, err := gpioPin.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
-//	     if err != nil {
-//	         log.Fatal(err)
-//	     }
-//
-//	     // Consume events
-//	     go func() {
-//	         for evt := range events {
-//	             fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
-//	         }
-//	     }()
-//
-//	     // Keep running for a while to catch events
-//	     time.Sleep(5 * time.Second)
-//
-//	     // Stop watching (optional)
-//	     // cancel()
-//	 }
+//	// Simulate an external signal.
+//	_ = pin.Drive(gpio.High)
+//	_ = pin.Drive(gpio.Low)
 package rpiemu
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -76,29 +62,51 @@ import (
 // pin simulates a GPIO pin.
 type pin struct {
 	sync.Mutex
-	pin       int              // GPIO pin number
-	mode      gpio.Mode        // input or output
-	pull      gpio.PullMode    // pull resistor configuration
-	debounce  time.Duration    // debounce duration for edge events
-	state     gpio.Level       // current logical level
-	dropCount atomic.Uint64    // number of events dropped due to full channel
-	watching  atomic.Bool      // true if WatchCh or WatchFunc is active
-	events    chan gpio.Event  // channel to deliver events (WatchCh only)
-	edge      gpio.Edge        // configured edge detection
-	lastEvent time.Time        // last event timestamp for debounce
-	callback  func(gpio.Event) // optional callback for edge events
+	pin       int             // GPIO pin number
+	mode      gpio.Mode       // input or output
+	pull      gpio.PullMode   // pull resistor configuration
+	debounce  time.Duration   // debounce duration for edge events
+	state     gpio.Level      // current logical level
+	dropCount atomic.Uint64   // number of events dropped due to full channel
+	watching  atomic.Bool     // true if WatchCh or WatchFunc is active
+	events    chan gpio.Event // channel to deliver events (WatchCh only)
+	edge      gpio.Edge       // configured edge detection
+	lastEvent time.Time       // last event timestamp for debounce
 }
 
 type Option func(*pin)
 
-// Compile-time check
-var _ gpio.Pin = (*pin)(nil)
+// Pin is an emulated GPIO pin.
+//
+// It is a gpio.Pin plus Drive, which has no counterpart on real hardware:
+// it simulates the outside world changing the line, and is the only way to
+// produce edge events on an input pin.
+type Pin interface {
+	gpio.Pin
+
+	// Drive simulates an external level change on the line.
+	//
+	// Unlike SetValue it works regardless of the configured mode, so code
+	// that reacts to input edges can be tested without hardware. Edge
+	// events, debouncing and edge filtering behave exactly as they do for
+	// a level change driven by SetValue.
+	Drive(level gpio.Level) error
+}
+
+// Compile-time checks
+var (
+	_ gpio.Pin = (*pin)(nil)
+	_ Pin      = (*pin)(nil)
+)
 
 // defaultBufferSize defines the size of the buffered channel for GPIO events.
 const defaultBufferSize = 32
 
 // NewPin creates a new emulated GPIO pin with default state (input, low, no pull).
-func NewPin(n int, opts ...Option) (gpio.Pin, error) {
+//
+// The returned Pin satisfies gpio.Pin and additionally offers Drive to
+// simulate external level changes.
+func NewPin(n int, opts ...Option) (Pin, error) {
 	p := &pin{
 		pin:      n,
 		mode:     gpio.Input,
@@ -128,7 +136,7 @@ func (p *pin) Close() error {
 	p.pull = gpio.PullNone
 	p.state = gpio.Low
 	p.debounce = 0
-	p.callback = nil
+
 	return err
 }
 
@@ -142,44 +150,69 @@ func (p *pin) SetValue(level gpio.Level) error {
 		return gpio.ErrInvalidMode
 	}
 
+	return p.setLevel(level)
+}
+
+// Drive simulates an external level change on the line, regardless of the
+// configured mode. See the Pin interface.
+func (p *pin) Drive(level gpio.Level) error {
+	p.Lock()
+	defer p.Unlock()
+
+	return p.setLevel(level)
+}
+
+// setLevel applies a new level and emits the resulting edge event, if any.
+//
+// The caller must hold the mutex, which is also what makes delivery safe
+// against a concurrent StopWatching closing the event channel.
+func (p *pin) setLevel(level gpio.Level) error {
 	if level != gpio.High && level != gpio.Low {
 		return gpio.ErrInvalidLevel
 	}
 
 	old := p.state
 	p.state = level
-	if old != level && p.watching.Load() {
-		now := time.Now()
-		if p.debounce > 0 && now.Sub(p.lastEvent) < p.debounce {
-			return nil
-		}
-		p.lastEvent = now
 
-		edge := gpio.RisingEdge
-		if level == gpio.Low {
-			edge = gpio.FallingEdge
-		}
-
-		event := gpio.Event{Time: now, Edge: edge}
-
-		// atomic load of the channel reference, no lock needed
-		if ch := p.events; ch != nil {
-			select {
-			case ch <- event:
-				// successfully delivered
-			default:
-				// channel full → drop event
-				p.dropCount.Add(1)
-			}
-		}
-
-		// call callback if present
-		if f := p.callback; f != nil {
-			go f(event) // async to avoid blocking
-		}
+	if old == level || !p.watching.Load() {
+		return nil
 	}
 
+	edge := gpio.RisingEdge
+	if level == gpio.Low {
+		edge = gpio.FallingEdge
+	}
+
+	// Only deliver the edges the watcher asked for.
+	if p.edge&edge == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	if p.debounce > 0 && now.Sub(p.lastEvent) < p.debounce {
+		return nil
+	}
+	p.lastEvent = now
+
+	p.deliver(gpio.Event{Time: now, Edge: edge})
+
 	return nil
+}
+
+// deliver hands an event to the active watcher, counting it as dropped if the
+// channel is full. The caller must hold the mutex.
+func (p *pin) deliver(event gpio.Event) {
+	if p.events == nil {
+		return
+	}
+
+	select {
+	case p.events <- event:
+		// successfully delivered
+	default:
+		// channel full → drop event
+		p.dropCount.Add(1)
+	}
 }
 
 // Value returns the current logical level of the pin.
@@ -238,53 +271,72 @@ func (p *pin) Info() string {
 }
 
 // WatchCh enables edge detection and returns a channel for events.
+//
+// The channel is closed by StopWatching and by Close.
 func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
-	if !p.watching.CompareAndSwap(false, true) {
-		return nil, gpio.ErrAlreadyWatching
-	}
-
 	if edges&(gpio.RisingEdge|gpio.FallingEdge) == 0 {
 		return nil, gpio.ErrInvalidEdgeConfig
 	}
 
+	if !p.watching.CompareAndSwap(false, true) {
+		return nil, gpio.ErrAlreadyWatching
+	}
+
 	p.Lock()
 	defer p.Unlock()
 
-	p.dropCount.Add(0)
 	p.edge = edges
-	p.callback = nil
 	p.events = make(chan gpio.Event, defaultBufferSize)
+
 	return p.events, nil
 }
 
-// WatchFunc enables edge detection and registers a callback for events.
+// WatchFunc enables edge detection and calls f for every event.
+//
+// Events are delivered by a single goroutine, so f is never called
+// concurrently with itself and sees the edges in the order they occurred.
+// A callback that blocks stalls delivery and eventually causes events to be
+// dropped, which DroppedEvents reports.
+//
+// The goroutine ends when StopWatching is called or the pin is closed.
 func (p *pin) WatchFunc(edges gpio.Edge, f func(gpio.Event)) error {
-	if !p.watching.CompareAndSwap(false, true) {
-		return gpio.ErrAlreadyWatching
+	if f == nil {
+		return errors.New("rpiemu: callback must not be nil")
 	}
 
-	if edges&(gpio.RisingEdge|gpio.FallingEdge) == 0 {
-		return gpio.ErrInvalidEdgeConfig
+	ch, err := p.WatchCh(edges)
+	if err != nil {
+		return err
 	}
 
-	p.Lock()
-	defer p.Unlock()
+	go func() {
+		for event := range ch {
+			f(event)
+		}
+	}()
 
-	p.dropCount.Add(0)
-	p.edge = edges
-	p.events = nil
-	p.callback = f
 	return nil
 }
 
 // StopWatching disables any active watcher (channel or callback).
+//
+// A channel handed out by WatchCh is closed, so a consumer ranging over it
+// terminates. It is safe to call even if no watcher is active.
 func (p *pin) StopWatching() error {
+	if !p.watching.CompareAndSwap(true, false) {
+		return nil // already stopped
+	}
+
 	p.Lock()
 	defer p.Unlock()
 
-	p.events = nil
-	p.callback = nil
-	p.watching.Store(false)
+	// Events are delivered while holding the mutex, so closing here cannot
+	// race with a send.
+	if p.events != nil {
+		close(p.events)
+		p.events = nil
+	}
+
 	return nil
 }
 
