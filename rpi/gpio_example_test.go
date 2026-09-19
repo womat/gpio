@@ -1,7 +1,6 @@
 package rpi_test
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"time"
@@ -10,7 +9,11 @@ import (
 	"github.com/womat/golib/gpio/rpi"
 )
 
-func ExamplePort_usage() {
+// Example_usage shows how to drive one line and watch another.
+//
+// It deliberately carries no "Output:" comment: the example needs a real GPIO
+// chip, so it is compiled as documentation but never executed by go test.
+func Example_usage() {
 	// Configure as output and set high
 	out, err := rpi.NewPin(17, rpi.WithMode(gpio.Output), rpi.WithPullup(gpio.PullUp))
 	if err != nil {
@@ -18,7 +21,9 @@ func ExamplePort_usage() {
 	}
 	defer out.Close()
 
-	out.SetValue(gpio.High)
+	if err := out.SetValue(gpio.High); err != nil {
+		log.Fatal(err)
+	}
 
 	// Configure as input with pull-up
 	in, err := rpi.NewPin(18, rpi.WithMode(gpio.Input), rpi.WithPullup(gpio.PullUp), rpi.WithDebounce(10*time.Millisecond))
@@ -27,12 +32,8 @@ func ExamplePort_usage() {
 	}
 	defer in.Close()
 
-	// Create a context to control watching lifetime
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Watching events
-	ch, err := in.WatchCh(ctx, gpio.RisingEdge|gpio.FallingEdge)
+	// Watch for edges. The channel is closed by StopWatching or Close.
+	ch, err := in.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -44,12 +45,6 @@ func ExamplePort_usage() {
 		}
 	}()
 
-	// optional: cancel() if you want to stop watching immediately
-	// cancel()
-
 	// Simulate some waiting for a demonstration
 	time.Sleep(100 * time.Millisecond)
-
-	// Output:
-	// (No fixed output expected; this is just a usage example)
 }

@@ -43,12 +43,11 @@ package rpi
 import (
 	"errors"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	gpiod "github.com/warthog618/go-gpiocdev"
 	"github.com/womat/golib/gpio"
+	"github.com/womat/golib/gpio/internal/watch"
 )
 
 // Compile-time check
@@ -67,17 +66,15 @@ const Chip = "gpiochip0"
 // It allows reading/writing the pin, configuring mode/pull/debounce,
 // and watching for edge events via a channel or callback.
 type pin struct {
-	sync.Mutex
-	gpioLine  *gpiod.Line      // underlying gpiod line
-	events    chan gpio.Event  // channel to deliver GPIO events
-	dropCount atomic.Uint64    // count of events dropped due to a full channel
-	watching  atomic.Bool      // true if Watch() is active
-	callback  func(gpio.Event) // optional callback for edge events
+	gpioLine *gpiod.Line   // underlying gpiod line
+	watcher  watch.Watcher // event delivery, shared with the emulator backend
 }
 
 // NewPin requests a GPIO line from the default chip and returns a gpio.Pin.
 //
 // The line is initially configured as input with edge detection disabled.
+// On failure it returns a nil Pin, so the error must be checked before the
+// result is used or closed.
 func NewPin(n int, opts ...Option) (gpio.Pin, error) {
 
 	p := &pin{}
@@ -91,12 +88,13 @@ func NewPin(n int, opts ...Option) (gpio.Pin, error) {
 		opt(p, &gpioOpts)
 	}
 
-	line, err := gpiod.RequestLine(Chip, n,
-		gpioOpts...)
-
-	p.watching.Store(false)
+	line, err := gpiod.RequestLine(Chip, n, gpioOpts...)
+	if err != nil {
+		return nil, err
+	}
 	p.gpioLine = line
-	return p, err
+
+	return p, nil
 }
 
 func WithMode(m gpio.Mode) Option {
@@ -199,31 +197,47 @@ func (p *pin) Info() string {
 // Use the returned channel to consume events - unread events may be dropped
 // if the internal buffer (size 32) is full.
 func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
-	return p.startWatch(edges, nil)
+	return p.startWatch(edges)
 }
 
-// WatchFunc starts monitoring the GPIO pin for edges and calls the provided callback.
+// WatchFunc starts monitoring the GPIO pin for edges and calls f for each one.
 //
 // Only one watcher is allowed at a time. If a watcher is already active,
 // gpio.ErrAlreadyWatching is returned.
 //
-// The callback is called asynchronously for each edge event.
+// Events are delivered by a single goroutine, so f is never called
+// concurrently with itself and sees the edges in the order they occurred.
+// A callback that blocks never stalls the kernel event handler; it stalls
+// delivery instead, and events are eventually dropped, which DroppedEvents
+// reports.
+//
+// The goroutine ends when StopWatching is called or the pin is closed.
 //
 // edges can be a combination of gpio.RisingEdge and gpio.FallingEdge.
 func (p *pin) WatchFunc(edges gpio.Edge, f func(event gpio.Event)) error {
-	_, err := p.startWatch(edges, f)
-	return err
-}
-
-// startWatch is a shared implementation for WatchCh and WatchFunc.
-//
-// If callback is nil, a channel is created and returned.
-// Otherwise, the callback is used for event delivery.
-func (p *pin) startWatch(edges gpio.Edge, callback func(gpio.Event)) (<-chan gpio.Event, error) {
-	if !p.watching.CompareAndSwap(false, true) {
-		return nil, gpio.ErrAlreadyWatching
+	if f == nil {
+		return errors.New("rpi: callback must not be nil")
 	}
 
+	ch, err := p.startWatch(edges)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for event := range ch {
+			f(event)
+		}
+	}()
+
+	return nil
+}
+
+// startWatch is the shared implementation for WatchCh and WatchFunc.
+//
+// It claims the watcher first and enables edge detection afterwards, so the
+// first event the kernel reports already has somewhere to go.
+func (p *pin) startWatch(edges gpio.Edge) (<-chan gpio.Event, error) {
 	gpiodEdge := gpiod.WithoutEdges
 	switch {
 	case edges == (gpio.RisingEdge | gpio.FallingEdge):
@@ -233,24 +247,18 @@ func (p *pin) startWatch(edges gpio.Edge, callback func(gpio.Event)) (<-chan gpi
 	case edges == gpio.FallingEdge:
 		gpiodEdge = gpiod.WithFallingEdge
 	default:
-		p.watching.Store(false)
 		return nil, gpio.ErrInvalidEdgeConfig
 	}
 
-	if err := p.gpioLine.Reconfigure(gpiodEdge); err != nil {
-		p.watching.Store(false)
+	ch, err := p.watcher.Start(edges, defaultBufferSize)
+	if err != nil {
 		return nil, err
 	}
 
-	p.Lock()
-	defer p.Unlock()
-
-	p.callback = callback
-
-	var ch chan gpio.Event
-	if callback == nil {
-		ch = make(chan gpio.Event, defaultBufferSize)
-		p.events = ch
+	// Enable edge detection only once the watcher is ready to receive.
+	if err := p.gpioLine.Reconfigure(gpiodEdge); err != nil {
+		p.watcher.Stop()
+		return nil, err
 	}
 
 	return ch, nil
@@ -258,7 +266,7 @@ func (p *pin) startWatch(edges gpio.Edge, callback func(gpio.Event)) (<-chan gpi
 
 // DroppedEvents returns how many events were dropped due to a full buffer.
 func (p *pin) DroppedEvents() uint64 {
-	return p.dropCount.Load()
+	return p.watcher.Dropped()
 }
 
 // StopWatching stops the active watcher and disables edge detection.
@@ -276,26 +284,10 @@ func (p *pin) handler(evt gpiod.LineEvent) {
 		return
 	}
 
-	event := gpio.Event{
+	p.watcher.Deliver(gpio.Event{
 		Time: time.Now(),
 		Edge: mapEdge(evt.Type),
-	}
-
-	// atomic load of the channel reference, no lock needed
-	if ch := p.events; ch != nil {
-		select {
-		case ch <- event:
-			// successfully delivered
-		default:
-			// channel full → drop event
-			p.dropCount.Add(1)
-		}
-	}
-
-	// atomic load of the callback function, no lock needed
-	if f := p.callback; f != nil {
-		f(event)
-	}
+	})
 }
 
 // mapEdge converts a gpiod.LineEventType to gpio.Edge.
@@ -308,18 +300,14 @@ func mapEdge(event gpiod.LineEventType) gpio.Edge {
 
 // stopWatchingInternal cleans up watcher resources and disables edge detection.
 func (p *pin) stopWatchingInternal() error {
-	if !p.watching.CompareAndSwap(true, false) {
-		return nil // already stopped
-	}
-	p.Lock()
-	defer p.Unlock()
-
-	if p.events != nil {
-		close(p.events)
-		p.events = nil
+	if !p.watcher.Active() {
+		return nil // nothing to stop, and no reason to touch the line
 	}
 
-	p.callback = nil
+	// Disable edge detection before releasing the watcher, so the kernel stops
+	// feeding events that nobody will read any more.
+	err := p.gpioLine.Reconfigure(gpiod.WithoutEdges)
+	p.watcher.Stop()
 
-	return p.gpioLine.Reconfigure(gpiod.WithoutEdges)
+	return err
 }

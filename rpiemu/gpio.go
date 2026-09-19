@@ -53,25 +53,23 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/womat/golib/gpio"
+	"github.com/womat/golib/gpio/internal/watch"
 )
 
 // pin simulates a GPIO pin.
 type pin struct {
 	sync.Mutex
-	pin       int             // GPIO pin number
-	mode      gpio.Mode       // input or output
-	pull      gpio.PullMode   // pull resistor configuration
-	debounce  time.Duration   // debounce duration for edge events
-	state     gpio.Level      // current logical level
-	dropCount atomic.Uint64   // number of events dropped due to full channel
-	watching  atomic.Bool     // true if WatchCh or WatchFunc is active
-	events    chan gpio.Event // channel to deliver events (WatchCh only)
-	edge      gpio.Edge       // configured edge detection
-	lastEvent time.Time       // last event timestamp for debounce
+	pin       int           // GPIO pin number
+	mode      gpio.Mode     // input or output
+	pull      gpio.PullMode // pull resistor configuration
+	debounce  time.Duration // debounce duration for edge events
+	state     gpio.Level    // current logical level
+	lastEvent time.Time     // last event timestamp for debounce
+
+	watcher watch.Watcher // event delivery, shared with the hardware backend
 }
 
 type Option func(*pin)
@@ -108,20 +106,16 @@ const defaultBufferSize = 32
 // simulate external level changes.
 func NewPin(n int, opts ...Option) (Pin, error) {
 	p := &pin{
-		pin:      n,
-		mode:     gpio.Input,
-		pull:     gpio.PullNone,
-		state:    gpio.Low,
-		debounce: 0,
-		edge:     0,
+		pin:   n,
+		mode:  gpio.Input,
+		pull:  gpio.PullNone,
+		state: gpio.Low,
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
 
-	p.dropCount.Store(0)
-	p.watching.Store(false)
 	return p, nil
 }
 
@@ -174,7 +168,7 @@ func (p *pin) setLevel(level gpio.Level) error {
 	old := p.state
 	p.state = level
 
-	if old == level || !p.watching.Load() {
+	if old == level {
 		return nil
 	}
 
@@ -183,8 +177,8 @@ func (p *pin) setLevel(level gpio.Level) error {
 		edge = gpio.FallingEdge
 	}
 
-	// Only deliver the edges the watcher asked for.
-	if p.edge&edge == 0 {
+	// Skip the debounce bookkeeping for edges nobody is waiting for.
+	if !p.watcher.Wants(edge) {
 		return nil
 	}
 
@@ -194,25 +188,9 @@ func (p *pin) setLevel(level gpio.Level) error {
 	}
 	p.lastEvent = now
 
-	p.deliver(gpio.Event{Time: now, Edge: edge})
+	p.watcher.Deliver(gpio.Event{Time: now, Edge: edge})
 
 	return nil
-}
-
-// deliver hands an event to the active watcher, counting it as dropped if the
-// channel is full. The caller must hold the mutex.
-func (p *pin) deliver(event gpio.Event) {
-	if p.events == nil {
-		return
-	}
-
-	select {
-	case p.events <- event:
-		// successfully delivered
-	default:
-		// channel full → drop event
-		p.dropCount.Add(1)
-	}
 }
 
 // Value returns the current logical level of the pin.
@@ -267,28 +245,14 @@ func (p *pin) Info() string {
 	p.Lock()
 	defer p.Unlock()
 	return fmt.Sprintf("gpioemu pin=%d mode=%s level=%s pull=%s debounce=%s drops=%d",
-		p.pin, p.mode, p.state, p.pull, p.debounce, p.dropCount.Load())
+		p.pin, p.mode, p.state, p.pull, p.debounce, p.watcher.Dropped())
 }
 
 // WatchCh enables edge detection and returns a channel for events.
 //
 // The channel is closed by StopWatching and by Close.
 func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
-	if edges&(gpio.RisingEdge|gpio.FallingEdge) == 0 {
-		return nil, gpio.ErrInvalidEdgeConfig
-	}
-
-	if !p.watching.CompareAndSwap(false, true) {
-		return nil, gpio.ErrAlreadyWatching
-	}
-
-	p.Lock()
-	defer p.Unlock()
-
-	p.edge = edges
-	p.events = make(chan gpio.Event, defaultBufferSize)
-
-	return p.events, nil
+	return p.watcher.Start(edges, defaultBufferSize)
 }
 
 // WatchFunc enables edge detection and calls f for every event.
@@ -323,24 +287,12 @@ func (p *pin) WatchFunc(edges gpio.Edge, f func(gpio.Event)) error {
 // A channel handed out by WatchCh is closed, so a consumer ranging over it
 // terminates. It is safe to call even if no watcher is active.
 func (p *pin) StopWatching() error {
-	if !p.watching.CompareAndSwap(true, false) {
-		return nil // already stopped
-	}
-
-	p.Lock()
-	defer p.Unlock()
-
-	// Events are delivered while holding the mutex, so closing here cannot
-	// race with a send.
-	if p.events != nil {
-		close(p.events)
-		p.events = nil
-	}
+	p.watcher.Stop()
 
 	return nil
 }
 
 // DroppedEvents returns the number of events dropped due to full buffer.
 func (p *pin) DroppedEvents() uint64 {
-	return p.dropCount.Load()
+	return p.watcher.Dropped()
 }
