@@ -153,7 +153,7 @@ func TestDeliverCountsDroppedEvents(t *testing.T) {
 	}
 
 	const sent = 5
-	for i := 0; i < sent; i++ {
+	for range sent {
 		w.Deliver(rising())
 	}
 
@@ -204,7 +204,7 @@ func TestWants(t *testing.T) {
 // Run with -race; without the lock in Deliver this fails within a few
 // iterations, either on the race detector or on the panic itself.
 func TestDeliverRacingStop(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		var w Watcher
 
 		// A buffer of one, so deliveries keep hitting a full channel and the
@@ -218,10 +218,10 @@ func TestDeliverRacingStop(t *testing.T) {
 
 		// Two producers, as a real backend may deliver from more than one
 		// goroutine (the emulator does: any caller driving the line).
-		for p := 0; p < 2; p++ {
+		for range 2 {
 			go func() {
 				defer wg.Done()
-				for n := 0; n < 50; n++ {
+				for range 50 {
 					w.Deliver(rising())
 				}
 			}()
@@ -239,7 +239,7 @@ func TestDeliverRacingStop(t *testing.T) {
 // TestStartRacingStop covers the other order: a watcher being restarted while
 // another goroutine is shutting it down.
 func TestStartRacingStop(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		var w Watcher
 
 		if _, err := w.Start(gpio.RisingEdge, bufferSize); err != nil {
