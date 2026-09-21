@@ -20,7 +20,7 @@
 // releases the underlying Line and disables event delivery.
 // Close is idempotent and may be called multiple times.
 //
-// # Example Usage
+// # Example usage
 //
 //	func main() {
 //	    gpioPin, err := rpi.NewPin(17)

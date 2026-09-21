@@ -22,7 +22,7 @@
 // A pin must be closed after use by calling Close(), which also stops an
 // active watcher and closes its event channel.
 //
-// # Example Usage
+// # Example usage
 //
 //	pin, err := rpiemu.NewPin(17,
 //	    rpiemu.WithMode(gpio.Input),

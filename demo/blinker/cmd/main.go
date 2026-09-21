@@ -1,12 +1,10 @@
-// Command gpio-toggle is a CLI tool that periodically toggles a GPIO output pin
-// on a Raspberry Pi.
+// Command blinker periodically toggles a GPIO output pin on a Raspberry Pi.
 //
-// It allows selecting a GPIO pin and defining a toggle interval in milliseconds.
-// The program initializes the pin as an output and alternates its level between
-// HIGH and LOW at the specified interval, logging each state change with a
-// precise timestamp.
+// Flags select the GPIO line and the toggle interval in milliseconds. The pin
+// is configured as an output and its level alternates between HIGH and LOW at
+// that interval, each change logged with a precise timestamp.
 //
-// The watcher runs until interrupted (e.g., via Ctrl+C).
+// It runs until interrupted (e.g., via Ctrl+C).
 package main
 
 import (

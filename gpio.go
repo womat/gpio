@@ -10,7 +10,7 @@
 // Note: This package does not interact with hardware directly.
 // It only defines the abstraction layer for GPIO implementations.
 //
-// # Example Usage
+// # Example usage
 //
 //	// Pick a backend: rpi on a Raspberry Pi, rpiemu everywhere else.
 //	pin, err := rpiemu.NewPin(17,

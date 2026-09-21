@@ -1,9 +1,9 @@
-// Command gpio-watch is a CLI tool for monitoring GPIO input events on a Raspberry Pi.
+// Command listener monitors GPIO input events on a Raspberry Pi.
 //
-// It allows selecting a GPIO pin, configuring rising and/or falling edge detection,
-// and optionally setting a debounce time in milliseconds. The program initializes
-// the pin as input with an internal pull-up resistor and logs each detected edge
-// event with a precise timestamp.
+// Flags select the GPIO line, which edges to watch (rising, falling or both)
+// and an optional debounce time in milliseconds. The pin is configured as an
+// input with an internal pull-up resistor, and every delivered edge is logged
+// with a precise timestamp.
 //
 // The watcher runs until interrupted (e.g., via Ctrl+C).
 package main
