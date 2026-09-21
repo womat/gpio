@@ -238,13 +238,16 @@ func (p *pin) WatchFunc(edges gpio.Edge, f func(event gpio.Event)) error {
 // It claims the watcher first and enables edge detection afterwards, so the
 // first event the kernel reports already has somewhere to go.
 func (p *pin) startWatch(edges gpio.Edge) (<-chan gpio.Event, error) {
-	gpiodEdge := gpiod.WithoutEdges
-	switch {
-	case edges == (gpio.RisingEdge | gpio.FallingEdge):
+	// The zero value of gpiod.LineEdge is LineEdgeNone, which is what
+	// gpiod.WithoutEdges is - and the default branch returns, so every path
+	// that reaches the call below has set this explicitly.
+	var gpiodEdge gpiod.LineEdge
+	switch edges {
+	case gpio.RisingEdge | gpio.FallingEdge:
 		gpiodEdge = gpiod.WithBothEdges
-	case edges == gpio.RisingEdge:
+	case gpio.RisingEdge:
 		gpiodEdge = gpiod.WithRisingEdge
-	case edges == gpio.FallingEdge:
+	case gpio.FallingEdge:
 		gpiodEdge = gpiod.WithFallingEdge
 	default:
 		return nil, gpio.ErrInvalidEdgeConfig
