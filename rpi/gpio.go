@@ -322,10 +322,7 @@ func eventTime(ts time.Duration) time.Time {
 		return now
 	}
 
-	age := time.Duration(mono.Nano()) - ts
-	if age < 0 {
-		age = 0
-	}
+	age := max(time.Duration(mono.Nano())-ts, 0)
 
 	return now.Add(-age)
 }
