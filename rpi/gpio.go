@@ -14,6 +14,15 @@
 // A Pin is safe for concurrent use.
 // Event delivery occurs asynchronously via the internal gpiod event handler.
 //
+// # Event time
+//
+// gpio.Event.Time is the moment the kernel detected the edge, not the moment
+// the event reached Go, so delivery latency does not distort the interval
+// between two events. The time carries Go's monotonic clock reading, which
+// keeps such intervals correct across wall-clock steps (NTP, boards without
+// RTC). With hardware debounce, the kernel stamps the edge once the debounce
+// period has passed; this constant offset cancels out in intervals.
+//
 // # Lifecycle
 //
 // A Pin must be closed after use by calling Close(). Closing the Pin
@@ -48,6 +57,7 @@ import (
 	gpiod "github.com/warthog618/go-gpiocdev"
 	"github.com/womat/golib/gpio"
 	"github.com/womat/golib/gpio/internal/watch"
+	"golang.org/x/sys/unix"
 )
 
 // Compile-time check
@@ -288,9 +298,36 @@ func (p *pin) handler(evt gpiod.LineEvent) {
 	}
 
 	p.watcher.Deliver(gpio.Event{
-		Time: time.Now(),
+		Time: eventTime(evt.Timestamp),
 		Edge: mapEdge(evt.Type),
 	})
+}
+
+// eventTime converts the kernel's edge timestamp into a time.Time.
+//
+// The kernel stamps the edge with CLOCK_MONOTONIC (Linux 5.7 and later, the
+// default event clock, which this package never changes); the handler runs
+// later. Measuring the event's age on the same clock and subtracting it from
+// time.Now() removes that delivery latency while keeping Go's monotonic
+// reading, so intervals between events are immune to wall-clock steps.
+//
+// If the timestamp is missing, the clock cannot be read, or the timestamp
+// lies in the future (as a CLOCK_REALTIME stamp from an older kernel would),
+// the age is treated as zero and the result is time.Now().
+func eventTime(ts time.Duration) time.Time {
+	now := time.Now()
+
+	var mono unix.Timespec
+	if ts <= 0 || unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono) != nil {
+		return now
+	}
+
+	age := time.Duration(mono.Nano()) - ts
+	if age < 0 {
+		age = 0
+	}
+
+	return now.Add(-age)
 }
 
 // mapEdge converts a gpiod.LineEventType to gpio.Edge.
