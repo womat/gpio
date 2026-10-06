@@ -90,3 +90,16 @@ func TestEventString(t *testing.T) {
 		t.Errorf("expected %s, got %s", expected, e.String())
 	}
 }
+
+func TestEventStringReportsMissedEdges(t *testing.T) {
+	e := Event{
+		Time:   time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		Edge:   FallingEdge,
+		Missed: 3,
+	}
+
+	expected := "Falling at 2024-01-01T12:00:00Z (3 missed before)"
+	if e.String() != expected {
+		t.Errorf("expected %s, got %s", expected, e.String())
+	}
+}

@@ -93,9 +93,15 @@ const (
 )
 
 // Event represents a detected edge transition on a GPIO pin.
+//
+// Missed counts the edges that were lost immediately before this one - in the
+// kernel or because the consumer did not keep up. It is 0 normally; when it is
+// not, the interval between this event and the previous one spans more than
+// one edge and must not be used for timing (a pulse rate, a bit period).
 type Event struct {
-	Time time.Time // Time when the edge was detected.
-	Edge Edge      // Type of edge (RisingEdge or FallingEdge).
+	Time   time.Time // Time when the edge was detected.
+	Edge   Edge      // Type of edge (RisingEdge or FallingEdge).
+	Missed uint64    // Edges lost immediately before this one; 0 normally.
 }
 
 // Pin defines the interface for GPIO pin operations.
@@ -117,15 +123,16 @@ type Pin interface {
 	// or the pin is closed, at which point the channel is closed.
 	//
 	// Events are dropped when the consumer does not keep up; DroppedEvents
-	// reports how many. Only one active watcher is allowed at a time: if
+	// reports how many, and the next delivered event reports the gap in its
+	// Missed field. Only one active watcher is allowed at a time: if
 	// watching is already active, ErrAlreadyWatching is returned.
 	WatchCh(edges Edge) (<-chan Event, error)
 	WatchFunc(edges Edge, f func(event Event)) error
 	// StopWatching stops an active Watch operation.
 	// It is safe to call even if no watcher is active.
 	StopWatching() error
-	// DroppedEvents returns the number of events that were dropped
-	// due to internal buffering limits.
+	// DroppedEvents returns the number of events that were lost, due to
+	// internal buffering limits or, where the backend can tell, in the kernel.
 	DroppedEvents() uint64
 }
 
@@ -189,7 +196,11 @@ func (p PullMode) String() string {
 
 // String formats the Event for logging/debugging.
 func (e Event) String() string {
-	return fmt.Sprintf("%s at %s", e.Edge, e.Time.Format(time.RFC3339Nano))
+	s := fmt.Sprintf("%s at %s", e.Edge, e.Time.Format(time.RFC3339Nano))
+	if e.Missed > 0 {
+		s += fmt.Sprintf(" (%d missed before)", e.Missed)
+	}
+	return s
 }
 
 // Convenience methods on Event

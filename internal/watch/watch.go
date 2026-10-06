@@ -1,7 +1,9 @@
 // Package watch implements the edge event delivery shared by the gpio backends.
 //
 // A Watcher owns the channel the consumer ranges over, the edge mask that was
-// asked for, and the number of events that had to be dropped. Delivery and
+// asked for, and the number of events that had to be dropped - in total, and
+// since the last delivery, which is reported on the next event as
+// gpio.Event.Missed so the consumer knows that interval is broken. Delivery and
 // shutdown are synchronised with each other, which is what keeps a backend
 // from closing the channel while an event is being delivered into it - a race
 // that ends in "send on closed channel" and takes the process down.
@@ -28,7 +30,8 @@ type Watcher struct {
 	edges  gpio.Edge
 	active bool
 
-	dropped atomic.Uint64
+	dropped atomic.Uint64 // lost events over the lifetime of the Watcher
+	pending atomic.Uint64 // lost events not yet reported in an Event.Missed
 }
 
 // Start claims the Watcher and returns the channel events are delivered on.
@@ -50,6 +53,7 @@ func (w *Watcher) Start(edges gpio.Edge, bufferSize int) (<-chan gpio.Event, err
 	w.edges = edges
 	w.events = make(chan gpio.Event, bufferSize)
 	w.active = true
+	w.pending.Store(0) // a gap from a previous watch says nothing about this one
 
 	return w.events, nil
 }
@@ -95,6 +99,13 @@ func (w *Watcher) Wants(edge gpio.Edge) bool {
 // counted. Events of an edge the watcher did not ask for are ignored, as are
 // all events while no watcher is active.
 //
+// event.Missed may already carry edges the backend knows were lost before it
+// (the kernel's own buffer overflowing); they are counted as dropped too. The
+// event that is delivered next has every loss since the previous delivery
+// added to its Missed. That count is exact as long as one goroutine delivers,
+// which is how both backends call it; concurrent callers can shift a loss
+// onto a neighbouring event, but never lose or double it.
+//
 // The read lock is held for the whole delivery, which is what makes this safe
 // against a concurrent Stop - the channel cannot be closed while a send is in
 // flight. Taking it is cheap and never blocks on another delivery.
@@ -106,16 +117,23 @@ func (w *Watcher) Deliver(event gpio.Event) {
 		return
 	}
 
+	if event.Missed > 0 {
+		w.dropped.Add(event.Missed)
+	}
+	event.Missed += w.pending.Swap(0)
+
 	select {
 	case w.events <- event:
 		// delivered
 	default:
 		w.dropped.Add(1)
+		w.pending.Add(event.Missed + 1) // report these on the next delivered event
 	}
 }
 
-// Dropped returns how many events were dropped because the consumer did not
-// keep up. The count is cumulative over the lifetime of the Watcher.
+// Dropped returns how many events were lost, because the consumer did not
+// keep up or because the backend reported them as lost. The count is
+// cumulative over the lifetime of the Watcher.
 func (w *Watcher) Dropped() uint64 {
 	return w.dropped.Load()
 }

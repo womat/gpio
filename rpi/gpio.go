@@ -23,6 +23,11 @@
 // RTC). With hardware debounce, the kernel stamps the edge once the debounce
 // period has passed; this constant offset cancels out in intervals.
 //
+// gpio.Event.Missed also counts edges the kernel lost because its own event
+// buffer overflowed, detected through the per-line sequence number the kernel
+// assigns (uAPI v2). On a kernel without it, only losses on the Go side are
+// reported.
+//
 // # Lifecycle
 //
 // A Pin must be closed after use by calling Close(). Closing the Pin
@@ -52,6 +57,7 @@ package rpi
 import (
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	gpiod "github.com/warthog618/go-gpiocdev"
@@ -78,6 +84,11 @@ const Chip = "gpiochip0"
 type pin struct {
 	gpioLine *gpiod.Line   // underlying gpiod line
 	watcher  watch.Watcher // event delivery, shared with the emulator backend
+
+	// lastSeqno is the kernel's sequence number of the previous edge, 0 before
+	// the first one of a watch. Written by the handler and reset by startWatch,
+	// which can overlap with a late event of the previous watch - hence atomic.
+	lastSeqno atomic.Uint32
 }
 
 // NewPin requests a GPIO line from the default chip and returns a gpio.Pin.
@@ -268,6 +279,9 @@ func (p *pin) startWatch(edges gpio.Edge) (<-chan gpio.Event, error) {
 		return nil, err
 	}
 
+	// The first edge of this watch has no predecessor to measure a gap against.
+	p.lastSeqno.Store(0)
+
 	// Enable edge detection only once the watcher is ready to receive.
 	if err := p.gpioLine.Reconfigure(gpiodEdge); err != nil {
 		p.watcher.Stop()
@@ -277,7 +291,8 @@ func (p *pin) startWatch(edges gpio.Edge) (<-chan gpio.Event, error) {
 	return ch, nil
 }
 
-// DroppedEvents returns how many events were dropped due to a full buffer.
+// DroppedEvents returns how many events were lost, to a full buffer here or
+// to an overflow in the kernel.
 func (p *pin) DroppedEvents() uint64 {
 	return p.watcher.Dropped()
 }
@@ -298,9 +313,26 @@ func (p *pin) handler(evt gpiod.LineEvent) {
 	}
 
 	p.watcher.Deliver(gpio.Event{
-		Time: eventTime(evt.Timestamp),
-		Edge: mapEdge(evt.Type),
+		Time:   eventTime(evt.Timestamp),
+		Edge:   mapEdge(evt.Type),
+		Missed: seqGap(p.lastSeqno.Swap(evt.LineSeqno), evt.LineSeqno),
 	})
+}
+
+// seqGap returns how many edges the kernel lost between two events of the
+// same line, given their sequence numbers.
+//
+// The kernel numbers the edges of a line consecutively, so any step larger
+// than one means the edges in between were lost - typically because its
+// event buffer overflowed. A zero on either side means there is nothing to
+// compare: last is 0 before the first edge of a watch, and cur is 0 on a
+// kernel without sequence numbers (uAPI v1). The subtraction is done in
+// uint32, so a wrap-around of the counter is not mistaken for a gap.
+func seqGap(last, cur uint32) uint64 {
+	if last == 0 || cur == 0 {
+		return 0
+	}
+	return uint64(cur - last - 1)
 }
 
 // eventTime converts the kernel's edge timestamp into a time.Time.

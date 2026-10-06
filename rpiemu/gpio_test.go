@@ -167,6 +167,45 @@ func TestWatchChDeliversOnlyRequestedEdges(t *testing.T) {
 	}
 }
 
+func TestWatchChReportsDroppedEdgesOnTheNextEvent(t *testing.T) {
+	p, _ := NewPin(21, WithMode(gpio.Input))
+	defer p.Close()
+
+	ch, err := p.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
+	if err != nil {
+		t.Fatalf("WatchCh failed: %v", err)
+	}
+
+	// Drive more edges than the buffer holds without reading any of them.
+	const lost = 5
+	level := gpio.Low
+	toggle := func() {
+		if level == gpio.Low {
+			level = gpio.High
+		} else {
+			level = gpio.Low
+		}
+		_ = p.Drive(level)
+	}
+	for range defaultBufferSize + lost {
+		toggle()
+	}
+
+	for range defaultBufferSize {
+		if evt := <-ch; evt.Missed != 0 {
+			t.Fatalf("a buffered event has Missed = %d, want 0", evt.Missed)
+		}
+	}
+
+	toggle()
+	if got := (<-ch).Missed; got != lost {
+		t.Errorf("the first event after the overflow has Missed = %d, want %d", got, lost)
+	}
+	if got := p.DroppedEvents(); got != lost {
+		t.Errorf("DroppedEvents() = %d, want %d", got, lost)
+	}
+}
+
 // TestWatchChRejectsEmptyEdgeMask is the regression test for a leaked watch
 // flag: the invalid configuration was reported, but the pin stayed marked as
 // watching and could never be watched again.

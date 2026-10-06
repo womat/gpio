@@ -165,6 +165,105 @@ func TestDeliverCountsDroppedEvents(t *testing.T) {
 	}
 }
 
+func TestDeliverReportsLossesOnTheNextEvent(t *testing.T) {
+	const capacity = 2
+
+	var w Watcher
+
+	ch, err := w.Start(gpio.RisingEdge, capacity)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	const sent = 5
+	for range sent {
+		w.Deliver(rising())
+	}
+
+	// The buffered events arrived before the gap and report none.
+	for i := range capacity {
+		if evt := <-ch; evt.Missed != 0 {
+			t.Errorf("buffered event %d has Missed = %d, want 0", i, evt.Missed)
+		}
+	}
+
+	w.Deliver(rising())
+	if got, want := (<-ch).Missed, uint64(sent-capacity); got != want {
+		t.Errorf("the first event after the gap has Missed = %d, want %d", got, want)
+	}
+
+	w.Deliver(rising())
+	if got := (<-ch).Missed; got != 0 {
+		t.Errorf("the gap was reported twice: the next event has Missed = %d", got)
+	}
+}
+
+func TestDeliverPassesBackendLossesThrough(t *testing.T) {
+	var w Watcher
+
+	ch, err := w.Start(gpio.RisingEdge, bufferSize)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	evt := rising()
+	evt.Missed = 3
+	w.Deliver(evt)
+
+	if got := (<-ch).Missed; got != 3 {
+		t.Errorf("Missed = %d, want the 3 the backend reported", got)
+	}
+	if got := w.Dropped(); got != 3 {
+		t.Errorf("dropped count is %d, want 3: losses the backend reports are losses too", got)
+	}
+}
+
+func TestDeliverAddsBackendLossesOfADroppedEvent(t *testing.T) {
+	var w Watcher
+
+	ch, err := w.Start(gpio.RisingEdge, 1)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	w.Deliver(rising()) // fills the buffer
+
+	evt := rising()
+	evt.Missed = 2
+	w.Deliver(evt) // dropped, together with the two before it
+
+	<-ch
+	w.Deliver(rising())
+
+	if got := (<-ch).Missed; got != 3 {
+		t.Errorf("Missed = %d, want 3 (two lost in the backend, one dropped here)", got)
+	}
+	if got := w.Dropped(); got != 3 {
+		t.Errorf("dropped count is %d, want 3", got)
+	}
+}
+
+func TestStartForgetsTheGapOfAPreviousWatch(t *testing.T) {
+	var w Watcher
+
+	if _, err := w.Start(gpio.RisingEdge, 1); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	w.Deliver(rising())
+	w.Deliver(rising()) // dropped
+	w.Stop()
+
+	ch, err := w.Start(gpio.RisingEdge, 1)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	w.Deliver(rising())
+
+	if got := (<-ch).Missed; got != 0 {
+		t.Errorf("the first event of a new watch has Missed = %d, want 0", got)
+	}
+}
+
 func TestWants(t *testing.T) {
 	var w Watcher
 

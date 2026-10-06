@@ -37,8 +37,9 @@ type Pin interface {
 
 Mode, pull resistor and debounce are fixed when the pin is requested, through
 the options of the chosen backend — there are no setters. `Edge` is a bit mask
-(`RisingEdge | FallingEdge`), `Event` carries the timestamp and the edge and
-offers `IsRising()`, `IsFalling()` and `String()`.
+(`RisingEdge | FallingEdge`), `Event` carries the timestamp, the edge and the
+number of edges lost immediately before it (`Missed`), and offers `IsRising()`,
+`IsFalling()` and `String()`.
 
 Both backends offer the same three options: `WithMode(gpio.Input|gpio.Output)`,
 `WithPullup(gpio.PullNone|gpio.PullUp|gpio.PullDown)` and
@@ -99,6 +100,12 @@ Rules that hold for both backends:
   consumer does not keep up, events are discarded and counted by
   `DroppedEvents()`. For timing-sensitive work — a line decoder, say — read the
   channel in a dedicated goroutine that does nothing else.
+- **A gap is reported on the event after it.** `Event.Missed` counts the edges
+  lost immediately before that event: dropped because the buffer was full, or —
+  on `gpio/rpi` — lost in the kernel, detected through the per-line sequence
+  number the kernel assigns. It is 0 normally. When it is not, the interval to
+  the previous event spans more than one edge: a pulse counter must not derive
+  a rate from it, and a line decoder must not take it for a bit period.
 - **`WatchFunc` delivers from a single goroutine**, so the callback is never
   called concurrently with itself and sees the edges in the order they
   occurred. A blocking callback stalls delivery and eventually costs events; it
@@ -152,25 +159,29 @@ go test -race ./gpio/...              # everything except gpio/rpi
 GOOS=linux GOARCH=arm64 go vet ./...  # includes gpio/rpi
 ```
 
-Coverage: 80.8 % in `gpio`, 91.7 % in `gpio/rpiemu`, 100 % in
+Coverage: 82.8 % in `gpio`, 92.7 % in `gpio/rpiemu`, 100 % in
 `gpio/internal/watch` — that last one is the number that matters, since it is
 the code `gpio/rpi` cannot test for itself.
 
-`gpio/rpi` has no tests — exercising it needs a real chip. Its example is
-compiled as documentation but deliberately carries no `Output:` comment, so
-`go test` does not try to run it.
+`gpio/rpi` has tests only for its pure helpers — the conversion of the kernel's
+edge timestamp and the gap detection from its sequence numbers. They need Linux
+to build and run in CI. Everything that touches a line needs a real chip. The
+package example is compiled as documentation but deliberately carries no
+`Output:` comment, so `go test` does not try to run it.
 
 ## Not addressed
 
 Known and deliberately left alone:
 
-- **`gpio/rpi` has no tests.** See above; the shared delivery logic is tested
-  instead, and the adapter around it is kept as thin as possible.
+- **`gpio/rpi` is not tested against a line.** See above; the shared delivery
+  logic is tested instead, and the adapter around it is kept as thin as
+  possible.
 - **The chip device is a constant.** `rpi.Chip` is `"gpiochip0"`. A board that
   exposes its header elsewhere needs a code change.
 - **The event buffer is fixed at 32.** `defaultBufferSize` in both backends;
-  there is no option for it. A consumer that cannot keep up loses events and
-  learns about it only through `DroppedEvents()`.
+  there is no option for it. A consumer that cannot keep up loses events; it
+  learns about them through `DroppedEvents()` and `Event.Missed`, but cannot
+  get them back.
 - **One line per `Pin`.** `go-gpiocdev` can request and read a set of lines
   atomically; this wrapper does not expose that, so reading eight lines means
   eight syscalls and no guarantee they describe the same instant.
