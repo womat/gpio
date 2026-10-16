@@ -84,6 +84,7 @@ const Chip = "gpiochip0"
 type pin struct {
 	gpioLine *gpiod.Line   // underlying gpiod line
 	watcher  watch.Watcher // event delivery, shared with the emulator backend
+	closed   atomic.Bool   // set by the first Close; later calls return nil
 
 	// lastSeqno is the kernel's sequence number of the previous edge, 0 before
 	// the first one of a watch. Written by the handler and reset by startWatch,
@@ -152,6 +153,12 @@ func WithDebounce(d time.Duration) Option {
 // Close stops any active watcher, disables edge detection, and releases the line.
 // Close is idempotent and can be called multiple times safely.
 func (p *pin) Close() error {
+	// go-gpiocdev reports "already closed" for a released line, so only the
+	// first call may touch it.
+	if p.closed.Swap(true) {
+		return nil
+	}
+
 	var errs []error
 
 	if err := p.StopWatching(); err != nil {

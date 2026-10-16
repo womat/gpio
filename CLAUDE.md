@@ -69,8 +69,10 @@ means the untestable part is a thin adapter over code that is tested under `-rac
 ## Known state
 
 `rpi` has tests only for its pure helpers (`eventTime`, `seqGap`), which build on Linux alone
-and therefore run in CI only; anything touching a line needs a real GPIO chip. Its example is
-compiled but carries no `Output:` comment, so `go test` does not try to run it.
+and therefore run in CI only; anything touching a line needs a real GPIO chip. Tests that do
+(`close_test.go`) skip unless `RPI_TEST_LINE` names a free line, so they run on a Pi only:
+`GOOS=linux GOARCH=arm64 go test -c ./rpi`, copy the binary over, `RPI_TEST_LINE=20 ./rpi.test`.
+Its example is compiled but carries no `Output:` comment, so `go test` does not try to run it.
 
 Linter configuration is `.golangci.yml`; the demo modules find it by walking up. `errcheck`
 ignores `Pin.Close` (callers defer it) and test files. **Do not widen these exclusions to make a
