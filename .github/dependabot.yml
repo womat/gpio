@@ -1,6 +1,6 @@
 # One gomod entry per module: everything under demo/ has its own go.mod, so a
-# single entry would leave two modules unwatched. Updates are grouped, because
-# these modules move together.
+# single entry would leave two modules unwatched. All Go updates go into one
+# group, so a week brings at most one pull request for them.
 #
 # To switch this off, delete this file. The CI workflow does not depend on it.
 
@@ -18,14 +18,9 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      golang-x:
-        patterns:
-          - "golang.org/x/*"
-      everything-else:
+      go:
         patterns:
           - "*"
-        exclude-patterns:
-          - "golang.org/x/*"
 
   - package-ecosystem: github-actions
     directory: /
