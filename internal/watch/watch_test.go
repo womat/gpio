@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/womat/golib/gpio"
+	"github.com/womat/gpio"
 )
 
 const bufferSize = 8
@@ -296,7 +296,7 @@ func TestWants(t *testing.T) {
 }
 
 // TestDeliverRacingStop is the regression test for the defect this package was
-// extracted for: gpio/rpi read the event channel without synchronisation and
+// extracted for: rpi read the event channel without synchronisation and
 // closed it from another goroutine, so a kernel edge arriving during shutdown
 // panicked with "send on closed channel".
 //

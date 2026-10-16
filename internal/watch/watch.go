@@ -17,7 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/womat/golib/gpio"
+	"github.com/womat/gpio"
 )
 
 // Watcher delivers edge events to a single consumer.

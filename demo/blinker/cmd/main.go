@@ -12,8 +12,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/womat/golib/gpio"
-	"github.com/womat/golib/gpio/rpi"
+	"github.com/womat/gpio"
+	"github.com/womat/gpio/rpi"
 )
 
 func main() {

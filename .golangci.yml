@@ -1,0 +1,32 @@
+# golangci-lint configuration for github.com/womat/gpio.
+#
+# Run it through scripts/check.sh rather than directly: every linter here needs
+# full type information, so on macOS rpi aborts the run, and the two modules
+# under demo/ are invisible to a root-level ./...
+#
+# The default linter set is kept. The exclusions below are decisions, not
+# convenience - each one says why.
+
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Every Pin has an explicit Close that callers must defer. A deferred
+      # Close has nowhere to return an error to, so errcheck and the convention
+      # are in direct conflict; the convention wins. Listed explicitly rather
+      # than switching errcheck off, so an unchecked error from anything else
+      # still gets reported.
+      exclude-functions:
+        - (github.com/womat/gpio.Pin).Close
+        - (github.com/womat/gpio/rpiemu.Pin).Close
+
+  exclusions:
+    rules:
+      # Test code may ignore what it is not asserting on: a deferred Close, a
+      # SetValue whose effect the test then checks by other means. Reporting
+      # those buries the findings that matter under a list of things nobody
+      # intends to handle.
+      - path: _test\.go
+        linters:
+          - errcheck

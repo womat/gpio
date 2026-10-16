@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/womat/golib/gpio"
-	"github.com/womat/golib/gpio/rpi"
+	"github.com/womat/gpio"
+	"github.com/womat/gpio/rpi"
 )
 
 // Example_usage shows how to drive one line and watch another.

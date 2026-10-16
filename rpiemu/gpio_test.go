@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/womat/golib/gpio"
+	"github.com/womat/gpio"
 )
 
 // collector gathers the edges delivered on a watch channel. The events arrive

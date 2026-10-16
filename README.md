@@ -3,15 +3,24 @@
 A backend-agnostic GPIO pin abstraction, developed primarily for the Raspberry
 Pi.
 
+```sh
+go get github.com/womat/gpio
+```
+
+This module used to be part of
+[github.com/womat/golib](https://github.com/womat/golib) as `golib/gpio`. The
+API is unchanged; only the import path differs. The copy in golib is
+deprecated and is removed there in golib v2.
+
 `gpio` itself contains no hardware code: it defines the `Pin` interface, the
 signal levels, modes, pull configurations and the edge event model. Two
 backends implement it.
 
-| Package             | Backend                                                        |
-|---------------------|----------------------------------------------------------------|
-| `gpio/rpi`          | Linux GPIO character device via `go-gpiocdev` — **Linux only** |
-| `gpio/rpiemu`       | In-memory emulator for tests and development without hardware  |
-| `gpio/internal/watch` | Event delivery shared by both backends, not importable from outside |
+| Package | Backend |
+|---|---|
+| `github.com/womat/gpio/rpi` | Linux GPIO character device via `go-gpiocdev` — **Linux only** |
+| `github.com/womat/gpio/rpiemu` | In-memory emulator for tests and development without hardware |
+| `internal/watch` | Event delivery shared by both backends, not importable from outside |
 
 Depend on `gpio.Pin` in your own code and choose the backend at construction
 time, so the emulator can be substituted in tests.
@@ -102,7 +111,7 @@ Rules that hold for both backends:
   channel in a dedicated goroutine that does nothing else.
 - **A gap is reported on the event after it.** `Event.Missed` counts the edges
   lost immediately before that event: dropped because the buffer was full, or —
-  on `gpio/rpi` — lost in the kernel, detected through the per-line sequence
+  on `rpi` — lost in the kernel, detected through the per-line sequence
   number the kernel assigns. It is 0 normally. When it is not, the interval to
   the previous event spans more than one edge: a pulse counter must not derive
   a rate from it, and a line decoder must not take it for a bit period.
@@ -127,7 +136,7 @@ pin.Drive(gpio.Low)
 `SetValue` behaves like real hardware and refuses to write to an input pin.
 `Drive` stands in for the outside world and works regardless of the configured
 mode — that is what makes the emulator useful for testing *receiving* code such
-as `manchester/decoder`. Debouncing and edge filtering apply to a level change
+as the Manchester decoder in `github.com/womat/golib/manchester/decoder`. Debouncing and edge filtering apply to a level change
 driven either way.
 
 `rpiemu.NewPin` returns `rpiemu.Pin`, which embeds `gpio.Pin`, so it can be
@@ -137,43 +146,62 @@ real hardware lets the kernel reject.
 
 ## Why the shared internal package
 
-`gpio/internal/watch` owns the channel a consumer ranges over, the edge mask,
+`internal/watch` owns the channel a consumer ranges over, the edge mask,
 the drop counting and the shutdown that closes the channel. Both backends
 differ in how they learn about an edge — a kernel callback for real hardware, a
 simulated level change for the emulator — but not in what happens afterwards.
 
 That logic lives in its own package for a practical reason: it is where the
-concurrency bugs are, and `gpio/rpi` cannot be tested off a Raspberry Pi.
+concurrency bugs are, and `rpi` cannot be tested off a Raspberry Pi.
 Keeping delivery there down to a one-line call means the untestable part is a
 thin adapter over code that is tested under `-race`, including the case of an
 edge arriving while the watcher is being shut down.
 
 ## Building and testing
 
-`gpio/rpi` depends on the Linux GPIO character device and does not build on
-macOS or Windows, so `go build ./...` and `go test ./...` fail there for that
+`rpi` depends on the Linux GPIO character device and does not build on macOS
+or Windows, so `go build ./...` and `go test ./...` fail there for that
 package alone. Use a cross-target check to cover it:
 
 ```sh
-go test -race ./gpio/...              # everything except gpio/rpi
-GOOS=linux GOARCH=arm64 go vet ./...  # includes gpio/rpi
+go test -race . ./rpiemu/ ./internal/...  # everything except rpi
+GOOS=linux GOARCH=arm64 go vet ./...      # includes rpi
 ```
 
-Coverage: 82.8 % in `gpio`, 92.7 % in `gpio/rpiemu`, 100 % in
-`gpio/internal/watch` — that last one is the number that matters, since it is
-the code `gpio/rpi` cannot test for itself.
+`scripts/check.sh` runs `go fix`, `go vet`, `golangci-lint` and `govulncheck`
+over this module and the demos, with `GOOS=linux` by default; `--check`
+reports pending `go fix` work without writing, `--skip=vuln` drops the step
+that needs a network. CI (`.github/workflows/ci.yml`) runs on Linux, where
+`rpi` builds natively.
 
-`gpio/rpi` has tests only for its pure helpers — the conversion of the kernel's
+Coverage: 82.8 % in `gpio`, 92.7 % in `rpiemu`, 100 % in `internal/watch` —
+that last one is the number that matters, since it is the code `rpi` cannot
+test for itself.
+
+`rpi` has tests only for its pure helpers — the conversion of the kernel's
 edge timestamp and the gap detection from its sequence numbers. They need Linux
 to build and run in CI. Everything that touches a line needs a real chip. The
 package example is compiled as documentation but deliberately carries no
 `Output:` comment, so `go test` does not try to run it.
 
+## Demos
+
+Each demo under `demo/` is a separate Go module with
+`replace github.com/womat/gpio => ../..`, so it always builds against the
+working copy. `make` cross-compiles for a Raspberry Pi, `make deploy` copies
+the binary over with `scp` — edit `PI_USER` and `PI_HOST` in the `Makefile`
+first.
+
+| Demo | Shows |
+|---|---|
+| `blinker` | Driving an output pin |
+| `listener` | Watching edge events on an input pin |
+
 ## Not addressed
 
 Known and deliberately left alone:
 
-- **`gpio/rpi` is not tested against a line.** See above; the shared delivery
+- **`rpi` is not tested against a line.** See above; the shared delivery
   logic is tested instead, and the adapter around it is kept as thin as
   possible.
 - **The chip device is a constant.** `rpi.Chip` is `"gpiochip0"`. A board that
@@ -190,5 +218,4 @@ Known and deliberately left alone:
 - **`ErrInvalidPullMode` is never returned.** It exists for symmetry with the
   other two.
 
-Full API: `go doc github.com/womat/golib/gpio`, `.../gpio/rpi`,
-`.../gpio/rpiemu`.
+Full API: `go doc github.com/womat/gpio`, `.../rpi`, `.../rpiemu`.

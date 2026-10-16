@@ -61,8 +61,8 @@ import (
 	"time"
 
 	gpiod "github.com/warthog618/go-gpiocdev"
-	"github.com/womat/golib/gpio"
-	"github.com/womat/golib/gpio/internal/watch"
+	"github.com/womat/gpio"
+	"github.com/womat/gpio/internal/watch"
 	"golang.org/x/sys/unix"
 )
 
