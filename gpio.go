@@ -1,14 +1,12 @@
-// Package gpio defines a generic interface for GPIO pin configuration
-// and event handling (developed primary for Raspberry Pi).
+// Package gpio defines a backend-agnostic interface for GPIO pin
+// configuration and edge events, developed primarily for the Raspberry Pi.
 //
-// It provides a standard Pin interface that can be implemented by
-// different backends (e.g., hardware drivers, emulators, or mocks).
-//
-// The package defines signal levels, edge types, pull configurations,
-// and a unified event model for GPIO state changes.
-//
-// Note: This package does not interact with hardware directly.
-// It only defines the abstraction layer for GPIO implementations.
+// It contains no hardware code: it defines the Pin interface, signal levels,
+// modes, pull configurations and the Event model. Two backends implement it:
+// github.com/womat/gpio/rpi drives real lines through the Linux GPIO character
+// device (Linux only), and github.com/womat/gpio/rpiemu is an in-memory
+// emulator for tests and development without hardware. Depend on Pin in your
+// own code and choose the backend at construction time.
 //
 // # Example usage
 //
@@ -33,9 +31,6 @@
 //
 // Mode, pull resistor and debounce are configured when the pin is requested,
 // through the options of the chosen backend; they cannot be changed afterwards.
-//
-// Note: This package does not interact with hardware directly but defines
-// the interface for GPIO event handling, allowing multiple implementations.
 package gpio
 
 import (

@@ -1,5 +1,8 @@
 # gpio
 
+[![CI](https://github.com/womat/gpio/actions/workflows/ci.yml/badge.svg)](https://github.com/womat/gpio/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/womat/gpio.svg)](https://pkg.go.dev/github.com/womat/gpio)
+
 A backend-agnostic GPIO pin abstraction, developed primarily for the Raspberry
 Pi.
 
