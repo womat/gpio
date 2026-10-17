@@ -45,7 +45,7 @@ type pair struct {
 const settle = 50 * time.Millisecond
 
 func main() {
-	pairsFlag := flag.String("pairs", "18:25,13:6,12:26", "output:input pairs, comma separated")
+	pairsFlag := flag.String("pairs", "18:25,13:6,12:26", "output:input pairs, comma separated (empty = none)")
 	sensorsFlag := flag.String("sensors", "21,19", "input-only pins, comma separated (empty = none)")
 	watch := flag.Duration("watch", 30*time.Second, "how long to record sensor edges (0 = not at all)")
 	flag.Parse()
@@ -221,6 +221,9 @@ func judge(atLow, atHigh []gpio.Level) string {
 }
 
 func parsePairs(s string) ([]*pair, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil // sensors only, no pin is driven
+	}
 	var pairs []*pair
 	for f := range strings.SplitSeq(s, ",") {
 		out, in, ok := strings.Cut(strings.TrimSpace(f), ":")
