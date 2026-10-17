@@ -80,7 +80,7 @@ new finding go away; fix the finding or record the decision.**
 
 **CI:** `.github/workflows/ci.yml`, on pushes to `main` and pull requests, runs on Linux.
 Actions are pinned to a commit SHA with the release in a comment; dependabot updates the pins
-and the Go dependencies of all three modules. Jobs: `format`, `checks`
+and the Go dependencies of all modules. Jobs: `format`, `checks`
 (`scripts/check.sh --check`), `library` (vet plus `go test -race -cover`), `cross` (five Linux
-targets — Windows and macOS are impossible because of `rpi`), `demos`. All three modules
+targets — Windows and macOS are impossible because of `rpi`), `demos`. All modules
 declare `go 1.27`, the same as golib and its consumers; keep them in step.

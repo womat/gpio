@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        demo: [blinker, listener]
+        demo: [blinker, listener, wirecheck]
     defaults:
       run:
         working-directory: demo/${{ matrix.demo }}

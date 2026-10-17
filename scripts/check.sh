@@ -33,6 +33,7 @@ ALL_MODULES=(
 	.
 	demo/blinker
 	demo/listener
+	demo/wirecheck
 )
 
 ALL_STEPS=(fix vet lint vuln)

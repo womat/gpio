@@ -199,6 +199,7 @@ first.
 |---|---|
 | `blinker` | Driving an output pin |
 | `listener` | Watching edge events on an input pin |
+| `wirecheck` | Checking the wiring of a test bench: output→input pairs (direct or through an optocoupler), cross-talk, sensor edges |
 
 ## Not addressed
 
