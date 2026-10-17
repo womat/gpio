@@ -18,10 +18,13 @@
 //
 // gpio.Event.Time is the moment the kernel detected the edge, not the moment
 // the event reached Go, so delivery latency does not distort the interval
-// between two events. The time carries Go's monotonic clock reading, which
-// keeps such intervals correct across wall-clock steps (NTP, boards without
-// RTC). With hardware debounce, the kernel stamps the edge once the debounce
-// period has passed; this constant offset cancels out in intervals.
+// between two events: it is the difference of the kernel's timestamps, to the
+// nanosecond except for a few hundred nanoseconds once a second, when the
+// reference between both clocks is renewed. The time carries Go's monotonic
+// clock reading, which keeps such intervals correct across wall-clock steps
+// (NTP, boards without RTC); the wall time follows such a step within a
+// second. With hardware debounce, the kernel stamps the edge once the
+// debounce period has passed; this constant offset cancels out in intervals.
 //
 // gpio.Event.Missed also counts edges the kernel lost because its own event
 // buffer overflowed, detected through the per-line sequence number the kernel
@@ -342,28 +345,66 @@ func seqGap(last, cur uint32) uint64 {
 	return uint64(cur - last - 1)
 }
 
+// clockAnchor pairs a time.Now() reading with the CLOCK_MONOTONIC reading
+// taken right after it.
+type clockAnchor struct {
+	now  time.Time
+	mono time.Duration
+}
+
+// anchor is shared by all pins; it is replaced, never modified.
+var anchor atomic.Pointer[clockAnchor]
+
+// anchorAge is how long an anchor is used before it is read again, so the
+// wall time of events follows a clock step (NTP after boot) within a second.
+const anchorAge = time.Second
+
 // eventTime converts the kernel's edge timestamp into a time.Time.
 //
 // The kernel stamps the edge with CLOCK_MONOTONIC (Linux 5.7 and later, the
 // default event clock, which this package never changes); the handler runs
-// later. Measuring the event's age on the same clock and subtracting it from
-// time.Now() removes that delivery latency while keeping Go's monotonic
-// reading, so intervals between events are immune to wall-clock steps.
+// later. The timestamp is placed relative to an anchor, a pair of time.Now()
+// and CLOCK_MONOTONIC read together and renewed after anchorAge, so the
+// interval between two events is exactly the kernel's unless an anchor
+// renewal falls between them, and the result keeps Go's monotonic reading.
+// Reading both clocks per event instead put the time between the two reads
+// into every event — up to ~50 µs when the handler was preempted there.
 //
 // If the timestamp is missing, the clock cannot be read, or the timestamp
 // lies in the future (as a CLOCK_REALTIME stamp from an older kernel would),
-// the age is treated as zero and the result is time.Now().
+// the result is time.Now().
 func eventTime(ts time.Duration) time.Time {
-	now := time.Now()
-
-	var mono unix.Timespec
-	if ts <= 0 || unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono) != nil {
-		return now
+	if ts <= 0 {
+		return time.Now()
 	}
 
-	age := max(time.Duration(mono.Nano())-ts, 0)
+	a := anchor.Load()
+	if a == nil || ts-a.mono > anchorAge {
+		a = newAnchor()
+		if a == nil {
+			return time.Now()
+		}
+		anchor.Store(a)
+	}
 
-	return now.Add(-age)
+	// time.Now() is read before the monotonic clock, so an anchor can only
+	// place events early, never in the future: a later result is not a
+	// CLOCK_MONOTONIC stamp.
+	t := a.now.Add(ts - a.mono)
+	if now := time.Now(); t.After(now) {
+		return now
+	}
+	return t
+}
+
+// newAnchor reads both clocks, or returns nil if CLOCK_MONOTONIC cannot be read.
+func newAnchor() *clockAnchor {
+	now := time.Now()
+	var mono unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono) != nil {
+		return nil
+	}
+	return &clockAnchor{now: now, mono: time.Duration(mono.Nano())}
 }
 
 // mapEdge converts a gpiod.LineEventType to gpio.Edge.

@@ -61,6 +61,46 @@ func TestEventTimePreservesIntervals(t *testing.T) {
 	near(t, "interval", second.Sub(first), interval)
 }
 
+// TestEventTimeIntervalIsExact is the regression test for intervals that were
+// off by the time between two clock reads in eventTime: a handler preempted
+// between them shifted an event by up to ~50 µs on a Pi 400 at 10–100 kHz,
+// enough for negative intervals between consecutive edges.
+func TestEventTimeIntervalIsExact(t *testing.T) {
+	now := monoNow(t)
+	ts := []time.Duration{now - 3*time.Millisecond, now - 2*time.Millisecond, now - 1*time.Millisecond}
+
+	for i := range 1000 {
+		first := eventTime(ts[0])
+		second := eventTime(ts[1])
+		third := eventTime(ts[2])
+		if d := second.Sub(first); d != time.Millisecond {
+			t.Fatalf("round %d: interval = %v, want exactly 1ms", i, d)
+		}
+		if d := third.Sub(first); d != 2*time.Millisecond {
+			t.Fatalf("round %d: interval = %v, want exactly 2ms", i, d)
+		}
+	}
+}
+
+// TestEventTimeFollowsWallClockStep covers a service started before NTP set
+// the clock, common on boards without RTC: the wall time of later events must
+// follow the step instead of staying at the anchor's old offset.
+func TestEventTimeFollowsWallClockStep(t *testing.T) {
+	t.Cleanup(func() { anchor.Store(nil) })
+
+	// An anchor taken two seconds ago, before the wall clock stepped one hour
+	// forward. Round(0) drops the monotonic reading so only the wall time is off.
+	mono := monoNow(t)
+	anchor.Store(&clockAnchor{
+		now:  time.Now().Round(0).Add(-2*time.Second - time.Hour),
+		mono: mono - 2*time.Second,
+	})
+
+	got := eventTime(mono - time.Millisecond)
+
+	near(t, "wall time behind now", time.Now().Round(0).Sub(got.Round(0)), time.Millisecond)
+}
+
 func TestEventTimeKeepsMonotonicReading(t *testing.T) {
 	got := eventTime(monoNow(t) - time.Millisecond)
 
