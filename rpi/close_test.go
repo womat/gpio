@@ -25,6 +25,20 @@ func testLine(t *testing.T) int {
 	return n
 }
 
+// TestNewPinFailureReturnsNil is the regression test for e4daf43: NewPin
+// returned a Pin alongside its error, so the usual NewPin/defer Close pattern
+// dereferenced a nil line. It needs no line - there is no line 9999, and CI
+// has no GPIO chip at all - so it runs in CI.
+func TestNewPinFailureReturnsNil(t *testing.T) {
+	p, err := NewPin(9999)
+	if err == nil {
+		t.Fatal("NewPin(9999) succeeded, want an error")
+	}
+	if p != nil {
+		t.Errorf("NewPin returned a non-nil Pin alongside %q, want nil", err)
+	}
+}
+
 // TestCloseIsIdempotent is the regression test for a second Close that
 // returned "already closed" from go-gpiocdev, although the package documents
 // Close as safe to call multiple times.
