@@ -70,8 +70,15 @@ means the untestable part is a thin adapter over code that is tested under `-rac
 
 `rpi` has tests only for its pure helpers (`eventTime`, `seqGap`), which build on Linux alone
 and therefore run in CI only; anything touching a line needs a real GPIO chip. Tests that do
-(`close_test.go`) skip unless `RPI_TEST_LINE` names a free line, so they run on a Pi only:
-`GOOS=linux GOARCH=arm64 go test -c ./rpi`, copy the binary over, `RPI_TEST_LINE=20 ./rpi.test`.
+skip unless told which lines to use, so they run on a Pi only: `close_test.go` needs
+`RPI_TEST_LINE` (a free line), `loopback_test.go` needs `RPI_TEST_LOOP` (wired output:input
+pairs, direct connection first). `GOOS=linux GOARCH=arm64 go test -c ./rpi`, copy the binary
+over, `RPI_TEST_LINE=20 RPI_TEST_LOOP=18:25 ./rpi.test -test.v`. Test against the direct
+connection 18→25 (18 output); the optocouplers (13→6, 12→26) are good for 1 kHz only
+(Wolfgang, 23.10.2026) and may be appended for the slow edge test. The bench is the
+Pi 3B+ `pi3b` (ssh alias, user `pv`), wired as `demo/wirecheck` describes. Do not assert exact
+edge counts above 10 kHz (edges per second): the Pi merges faster edges before the kernel numbers them (measured
+in `TestLoopbackBurst`'s comment).
 Its example is compiled but carries no `Output:` comment, so `go test` does not try to run it.
 
 Linter configuration is `.golangci.yml`; the demo modules find it by walking up. `errcheck`

@@ -118,6 +118,16 @@ Rules that hold for both backends:
   number the kernel assigns. It is 0 normally. When it is not, the interval to
   the previous event spans more than one edge: a pulse counter must not derive
   a rate from it, and a line decoder must not take it for a bit period.
+- **Edges faster than the interrupt handling are lost unseen.** Above roughly
+  50 kHz the board merges edges before the kernel numbers them, so neither
+  `Missed` nor `DroppedEvents()` can count them, and two consecutive events may
+  report the same direction. Measured in edges per second on a Pi 3B+
+  (Linux 6.18, direct loopback): nothing lost at 10 kHz, now and then one edge
+  in 2000 at 20 kHz, a few in 4000 at 50 kHz, about 60 % at 400 kHz. Keep
+  signals well below that rate. An input behind an optocoupler is slower
+  still: plan for at most 1 kHz signal frequency there. The Pi kept detecting
+  every edge from the EL817 and 4N35 on the test bench up to 10 kHz edges per
+  second, but that counts edges, not the shape of the signal behind them.
 - **`WatchFunc` delivers from a single goroutine**, so the callback is never
   called concurrently with itself and sees the edges in the order they
   occurred. A blocking callback stalls delivery and eventually costs events; it
@@ -181,10 +191,30 @@ Coverage: 82.8 % in `gpio`, 92.7 % in `rpiemu`, 100 % in `internal/watch` —
 that last one is the number that matters, since it is the code `rpi` cannot
 test for itself.
 
-`rpi` has tests only for its pure helpers — the conversion of the kernel's
-edge timestamp and the gap detection from its sequence numbers. They need Linux
-to build and run in CI. Everything that touches a line needs a real chip. The
-package example is compiled as documentation but deliberately carries no
+In CI, `rpi` is tested only through its pure helpers — the conversion of the
+kernel's edge timestamp and the gap detection from its sequence numbers. The
+tests that touch a line skip unless told which lines to use, so they run on a
+Pi only:
+
+```sh
+GOOS=linux GOARCH=arm64 go test -c ./rpi        # copy rpi.test to the Pi, then:
+RPI_TEST_LINE=20 RPI_TEST_LOOP=18:25 ./rpi.test -test.v
+```
+
+`RPI_TEST_LINE` names a free line for the `Close` tests. `RPI_TEST_LOOP` lists
+output:input pairs wired to each other (the bench `demo/wirecheck` describes;
+run it first). The direct connection 18→25, with 18 as the output, is the
+one that tests `rpi`; optocoupler pairs can be appended
+(`18:25,13:6,12:26`) and then also run the slow edge test at 250 Hz, below
+their 1 kHz limit. The loopback tests check
+that every edge arrives once, in the right direction and in the time window of
+the `SetValue` that caused it, that intervals never run backwards at 400 kHz,
+that the loss accounting is exact at 10 kHz, and that `StopWatching` and
+`Close` end a watch. The burst tests use the first pair only, so put the direct
+connection first. The race detector needs cgo and is not available in a cross
+build.
+
+The package example is compiled as documentation but deliberately carries no
 `Output:` comment, so `go test` does not try to run it.
 
 ## Demos
@@ -205,9 +235,9 @@ first.
 
 Known and deliberately left alone:
 
-- **`rpi` is not tested against a line.** See above; the shared delivery
-  logic is tested instead, and the adapter around it is kept as thin as
-  possible.
+- **CI does not test `rpi` against a line.** See above; the hardware tests run
+  by hand on a Pi, the shared delivery logic is tested in CI, and the adapter
+  around it is kept as thin as possible.
 - **The chip device is a constant.** `rpi.Chip` is `"gpiochip0"`. A board that
   exposes its header elsewhere needs a code change.
 - **The event buffer is fixed at 32.** `defaultBufferSize` in both backends;
