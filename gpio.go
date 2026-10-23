@@ -11,9 +11,9 @@
 // # Example usage
 //
 //	// Pick a backend: rpi on a Raspberry Pi, rpiemu everywhere else.
-//	pin, err := rpiemu.NewPin(17,
-//	    rpiemu.WithMode(gpio.Input),
-//	    rpiemu.WithPullup(gpio.PullUp),
+//	pin, err := rpi.NewPin(17,
+//	    rpi.WithMode(gpio.Input),
+//	    rpi.WithPullup(gpio.PullUp),
 //	)
 //	if err != nil {
 //	    log.Fatal(err)
