@@ -46,6 +46,7 @@ var ErrInvalidMode = errors.New("gpio: invalid mode")
 var ErrInvalidEdgeConfig = errors.New("gpio: invalid edge configuration")
 var ErrAlreadyWatching = errors.New("gpio: already watching")
 var ErrNilCallback = errors.New("gpio: callback must not be nil")
+var ErrClosed = errors.New("gpio: pin closed")
 
 // Level represents the logical signal level of a GPIO pin.
 type Level int
@@ -121,8 +122,13 @@ type Pin interface {
 	// Events are dropped when the consumer does not keep up; DroppedEvents
 	// reports how many, and the next delivered event reports the gap in its
 	// Missed field. Only one active watcher is allowed at a time: if
-	// watching is already active, ErrAlreadyWatching is returned.
+	// watching is already active, ErrAlreadyWatching is returned. An output
+	// pin cannot be watched (ErrInvalidMode), nor a closed one (ErrClosed).
 	WatchCh(edges Edge) (<-chan Event, error)
+	// WatchFunc is WatchCh with a callback, called from a single goroutine.
+	//
+	// Events still buffered when StopWatching or Close runs are not passed
+	// to f; a call already under way can still be running when they return.
 	WatchFunc(edges Edge, f func(event Event)) error
 	// StopWatching stops an active Watch operation.
 	// It is safe to call even if no watcher is active.

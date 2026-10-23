@@ -62,3 +62,37 @@ func TestWatchFuncRejectsNilCallback(t *testing.T) {
 		t.Errorf("WatchCh after a rejected WatchFunc: %v", err)
 	}
 }
+
+// TestWatchRejectsOutputPin is the regression test for a watch on an output:
+// enabling edge detection made go-gpiocdev request the line as an input, so
+// the output silently stopped driving.
+func TestWatchRejectsOutputPin(t *testing.T) {
+	p, err := NewPin(testLine(t), WithMode(gpio.Output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if _, err := p.WatchCh(gpio.RisingEdge); !errors.Is(err, gpio.ErrInvalidMode) {
+		t.Fatalf("WatchCh on an output returned %v, want ErrInvalidMode", err)
+	}
+	if err := p.SetValue(gpio.High); err != nil {
+		t.Errorf("SetValue after the rejected watch: %v - the line is no longer an output", err)
+	}
+	_ = p.SetValue(gpio.Low)
+}
+
+// TestWatchAfterClose checks the sentinel for a watch on a closed pin.
+func TestWatchAfterClose(t *testing.T) {
+	p, err := NewPin(testLine(t), WithMode(gpio.Input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.WatchCh(gpio.RisingEdge); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("WatchCh after Close returned %v, want ErrClosed", err)
+	}
+}

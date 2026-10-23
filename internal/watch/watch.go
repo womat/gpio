@@ -27,8 +27,10 @@ import (
 type Watcher struct {
 	mu     sync.RWMutex
 	events chan gpio.Event
+	done   chan struct{} // closed by Stop; ends a StartFunc goroutine early
 	edges  gpio.Edge
 	active bool
+	closed bool // set by Close; Start fails from then on
 
 	dropped atomic.Uint64 // lost events over the lifetime of the Watcher
 	pending atomic.Uint64 // lost events not yet reported in an Event.Missed
@@ -36,8 +38,9 @@ type Watcher struct {
 
 // Start claims the Watcher and returns the channel events are delivered on.
 //
-// It reports gpio.ErrInvalidEdgeConfig if edges selects no edge at all, and
-// gpio.ErrAlreadyWatching if a watcher is already active.
+// It reports gpio.ErrInvalidEdgeConfig if edges selects no edge at all,
+// gpio.ErrClosed after Close, and gpio.ErrAlreadyWatching if a watcher is
+// already active.
 func (w *Watcher) Start(edges gpio.Edge, bufferSize int) (<-chan gpio.Event, error) {
 	if edges&(gpio.RisingEdge|gpio.FallingEdge) == 0 {
 		return nil, gpio.ErrInvalidEdgeConfig
@@ -46,12 +49,59 @@ func (w *Watcher) Start(edges gpio.Edge, bufferSize int) (<-chan gpio.Event, err
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	return w.startLocked(edges, bufferSize)
+}
+
+// StartFunc claims the Watcher like Start and calls f for every event, from a
+// single goroutine that ends when the watch is stopped.
+//
+// Events still buffered when Stop or Close runs are not handed to f any more.
+// A call that already took its event from the buffer can still be running, or
+// just about to start, when Stop returns; waiting for it instead would
+// deadlock a callback that stops its own watch.
+func (w *Watcher) StartFunc(edges gpio.Edge, bufferSize int, f func(gpio.Event)) error {
+	if f == nil {
+		return gpio.ErrNilCallback
+	}
+	if edges&(gpio.RisingEdge|gpio.FallingEdge) == 0 {
+		return gpio.ErrInvalidEdgeConfig
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	events, err := w.startLocked(edges, bufferSize)
+	if err != nil {
+		return err
+	}
+	done := w.done
+
+	go func() {
+		for event := range events {
+			select {
+			case <-done:
+				return
+			default:
+				f(event)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// startLocked is Start without the edge check; the caller holds the lock.
+func (w *Watcher) startLocked(edges gpio.Edge, bufferSize int) (<-chan gpio.Event, error) {
+	if w.closed {
+		return nil, gpio.ErrClosed
+	}
 	if w.active {
 		return nil, gpio.ErrAlreadyWatching
 	}
 
 	w.edges = edges
 	w.events = make(chan gpio.Event, bufferSize)
+	w.done = make(chan struct{})
 	w.active = true
 	w.pending.Store(0) // a gap from a previous watch says nothing about this one
 
@@ -66,12 +116,33 @@ func (w *Watcher) Stop() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	return w.stopLocked()
+}
+
+// Close stops an active watcher like Stop and makes every later Start fail
+// with gpio.ErrClosed. It is safe to call more than once.
+//
+// Doing both under one lock is the point: a Start racing a backend's Close
+// either runs first and has its channel closed here, or runs after and
+// fails - it can no longer hand out a channel that nothing will ever close.
+func (w *Watcher) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.closed = true
+	w.stopLocked()
+}
+
+// stopLocked is Stop; the caller holds the lock.
+func (w *Watcher) stopLocked() bool {
 	if !w.active {
 		return false
 	}
 
+	close(w.done)
 	close(w.events)
 	w.events = nil
+	w.done = nil
 	w.active = false
 
 	return true

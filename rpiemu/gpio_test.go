@@ -3,6 +3,7 @@ package rpiemu
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -336,9 +337,11 @@ func TestModeAndPull(t *testing.T) {
 	}
 }
 
+// TestDebounce watches an input, as only inputs can be watched; Drive
+// produces the edges.
 func TestDebounce(t *testing.T) {
 	p, err := NewPin(20,
-		WithMode(gpio.Output),
+		WithMode(gpio.Input),
 		WithPullup(gpio.PullUp),
 		WithDebounce(50*time.Millisecond))
 	if err != nil {
@@ -351,13 +354,13 @@ func TestDebounce(t *testing.T) {
 	events := collect(ch)
 
 	// Flanken simulieren
-	p.SetValue(gpio.High) // erstes Event
+	_ = p.Drive(gpio.High) // erstes Event
 	time.Sleep(10 * time.Millisecond)
-	p.SetValue(gpio.Low) // wird gefiltert (10ms < 50ms)
+	_ = p.Drive(gpio.Low) // wird gefiltert (10ms < 50ms)
 	time.Sleep(60 * time.Millisecond)
-	p.SetValue(gpio.High) // neues Event (60ms > 50ms)
+	_ = p.Drive(gpio.High) // neues Event (60ms > 50ms)
 	time.Sleep(60 * time.Millisecond)
-	p.SetValue(gpio.Low) // neues Event (60ms > 50ms)
+	_ = p.Drive(gpio.Low) // neues Event (60ms > 50ms)
 
 	// Warten, damit alle goroutines durchlaufen
 	time.Sleep(20 * time.Millisecond)
@@ -365,4 +368,66 @@ func TestDebounce(t *testing.T) {
 	// Erwartete Events: RisingEdge, RisingEdge, FallingEdge
 	assertEdges(t, events, gpio.RisingEdge, gpio.RisingEdge, gpio.FallingEdge)
 
+}
+
+// TestWatchRejectsOutputPins is the regression test for a watch on an output:
+// the emulator delivered its SetValue edges, while on real hardware edge
+// detection silently turned the line into an input that drove nothing.
+func TestWatchRejectsOutputPins(t *testing.T) {
+	p, _ := NewPin(26, WithMode(gpio.Output))
+
+	if _, err := p.WatchCh(gpio.RisingEdge); !errors.Is(err, gpio.ErrInvalidMode) {
+		t.Errorf("WatchCh on an output returned %v, want ErrInvalidMode", err)
+	}
+	if err := p.WatchFunc(gpio.RisingEdge, func(gpio.Event) {}); !errors.Is(err, gpio.ErrInvalidMode) {
+		t.Errorf("WatchFunc on an output returned %v, want ErrInvalidMode", err)
+	}
+}
+
+// TestWatchAfterClose checks that a closed pin cannot be watched, as on real
+// hardware.
+func TestWatchAfterClose(t *testing.T) {
+	p, _ := NewPin(27, WithMode(gpio.Input))
+	_ = p.Close()
+
+	if _, err := p.WatchCh(gpio.RisingEdge); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("WatchCh after Close returned %v, want ErrClosed", err)
+	}
+	if err := p.WatchFunc(gpio.RisingEdge, func(gpio.Event) {}); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("WatchFunc after Close returned %v, want ErrClosed", err)
+	}
+}
+
+// TestWatchFuncStopsAtClose is the regression test for callbacks that kept
+// arriving after Close had returned, one for every event still buffered.
+func TestWatchFuncStopsAtClose(t *testing.T) {
+	p, _ := NewPin(16, WithMode(gpio.Input))
+
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	err := p.WatchFunc(gpio.RisingEdge|gpio.FallingEdge, func(gpio.Event) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+	})
+	if err != nil {
+		t.Fatalf("WatchFunc failed: %v", err)
+	}
+
+	_ = p.Drive(gpio.High)
+	<-entered
+	for range 5 { // ten more edges wait in the buffer
+		_ = p.Drive(gpio.Low)
+		_ = p.Drive(gpio.High)
+	}
+
+	_ = p.Close()
+	close(release)
+	time.Sleep(50 * time.Millisecond)
+
+	if n := calls.Load(); n != 1 {
+		t.Errorf("callback ran %d times, want 1: buffered events were delivered after Close", n)
+	}
 }

@@ -118,10 +118,10 @@ func NewPin(n int, opts ...Option) (Pin, error) {
 	return p, nil
 }
 
-// Close disables any active watchers and resets the pin state.
+// Close disables any active watchers and resets the pin state. A watch
+// started afterwards fails with gpio.ErrClosed, as it does on real hardware.
 func (p *pin) Close() error {
-
-	err := p.StopWatching()
+	p.watcher.Close()
 
 	p.Lock()
 	defer p.Unlock()
@@ -130,7 +130,7 @@ func (p *pin) Close() error {
 	p.state = gpio.Low
 	p.debounce = 0
 
-	return err
+	return nil
 }
 
 // SetValue sets the pin's logical level (output only) and triggers edge events if watching.
@@ -249,8 +249,13 @@ func (p *pin) Info() string {
 
 // WatchCh enables edge detection and returns a channel for events.
 //
-// The channel is closed by StopWatching and by Close.
+// The channel is closed by StopWatching and by Close. An output pin cannot be
+// watched and returns gpio.ErrInvalidMode, because on real hardware edge
+// detection would turn it into an input.
 func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
+	if err := p.checkWatchable(); err != nil {
+		return nil, err
+	}
 	return p.watcher.Start(edges, defaultBufferSize)
 }
 
@@ -262,22 +267,28 @@ func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
 // dropped, which DroppedEvents reports.
 //
 // The goroutine ends when StopWatching is called or the pin is closed.
+// Events still buffered then are not passed to f; a call already under way
+// can still be running when StopWatching or Close returns. An output pin
+// returns gpio.ErrInvalidMode, as for WatchCh.
 func (p *pin) WatchFunc(edges gpio.Edge, f func(gpio.Event)) error {
 	if f == nil {
 		return gpio.ErrNilCallback
 	}
-
-	ch, err := p.WatchCh(edges)
-	if err != nil {
+	if err := p.checkWatchable(); err != nil {
 		return err
 	}
 
-	go func() {
-		for event := range ch {
-			f(event)
-		}
-	}()
+	return p.watcher.StartFunc(edges, defaultBufferSize, f)
+}
 
+// checkWatchable rejects a watch on an output pin, like the rpi backend.
+func (p *pin) checkWatchable() error {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.mode == gpio.Output {
+		return gpio.ErrInvalidMode
+	}
 	return nil
 }
 

@@ -68,14 +68,16 @@ exposes its header on a different chip device is not supported.
 | Error | Returned when |
 |---|---|
 | `ErrAlreadyWatching` | a second `WatchCh`/`WatchFunc` while a watcher is active |
+| `ErrClosed` | `WatchCh`/`WatchFunc` on a pin that has been closed |
 | `ErrInvalidEdgeConfig` | the edge mask selects no edge; the pin is not claimed |
 | `ErrInvalidLevel` | `SetValue` gets a level that is neither `High` nor `Low` |
-| `ErrInvalidMode` | `SetValue` is called on a pin that is not an output |
+| `ErrInvalidMode` | `SetValue` on a pin that is not an output, or `WatchCh`/`WatchFunc` on an output |
 | `ErrInvalidPullMode` | nothing — declared for symmetry, currently unused |
 | `ErrNilCallback` | `WatchFunc` gets a nil callback; the pin is not claimed |
 
-`ErrInvalidLevel` and `ErrInvalidMode` are only produced by `rpiemu`; on real
-hardware the same situations surface as errors from `go-gpiocdev`.
+`ErrInvalidLevel`, and `ErrInvalidMode` for `SetValue`, are only produced by
+`rpiemu`; on real hardware the same situations surface as errors from
+`go-gpiocdev`. The watch errors are the same in both backends.
 
 ## Watching edges
 
@@ -105,6 +107,10 @@ Rules that hold for both backends:
 - **One watcher at a time.** A second `WatchCh` or `WatchFunc` returns
   `ErrAlreadyWatching`; an edge mask selecting no edge returns
   `ErrInvalidEdgeConfig`, without claiming the pin.
+- **Only an input can be watched.** `WatchCh` and `WatchFunc` on an output
+  return `ErrInvalidMode`: edge detection would make `go-gpiocdev` request the
+  line as an input, and the output would silently stop driving. A closed pin
+  returns `ErrClosed`.
 - **The channel is closed** by `StopWatching` and by `Close`, so a consumer
   ranging over it terminates.
 - **Only the requested edges are delivered.**
@@ -131,7 +137,9 @@ Rules that hold for both backends:
 - **`WatchFunc` delivers from a single goroutine**, so the callback is never
   called concurrently with itself and sees the edges in the order they
   occurred. A blocking callback stalls delivery and eventually costs events; it
-  never stalls the kernel event handler.
+  never stalls the kernel event handler. Events still buffered when
+  `StopWatching` or `Close` runs are not passed to the callback; a call already
+  under way can still be running when they return (see *Not addressed*).
 
 ## The emulator
 
@@ -149,8 +157,9 @@ pin.Drive(gpio.Low)
 `SetValue` behaves like real hardware and refuses to write to an input pin.
 `Drive` stands in for the outside world and works regardless of the configured
 mode — that is what makes the emulator useful for testing *receiving* code such
-as the Manchester decoder in `github.com/womat/golib/manchester/decoder`. Debouncing and edge filtering apply to a level change
-driven either way.
+as the Manchester decoder in `github.com/womat/golib/manchester/decoder`. Only an input can be watched, as
+on real hardware, so the edges a test observes come from `Drive`; debouncing
+and edge filtering apply to them.
 
 `rpiemu.NewPin` returns `rpiemu.Pin`, which embeds `gpio.Pin`, so it can be
 passed anywhere a `gpio.Pin` is expected. That is also why the emulator is the
@@ -187,7 +196,7 @@ reports pending `go fix` work without writing, `--skip=vuln` drops the step
 that needs a network. CI (`.github/workflows/ci.yml`) runs on Linux, where
 `rpi` builds natively.
 
-Coverage: 82.8 % in `gpio`, 92.7 % in `rpiemu`, 100 % in `internal/watch` —
+Coverage: 82.8 % in `gpio`, 90.9 % in `rpiemu`, 100 % in `internal/watch` —
 that last one is the number that matters, since it is the code `rpi` cannot
 test for itself.
 
@@ -254,7 +263,19 @@ Known and deliberately left alone:
   because an `Option` cannot return an error; changing that would change the
   option type for every consumer. So `ErrInvalidMode` and `ErrInvalidPullMode`
   are not used for an invalid option — `ErrInvalidMode` only reports a write
-  to an input, and `ErrInvalidPullMode` is never returned. It exists for
-  symmetry with the other two.
+  to an input or a watch on an output, and `ErrInvalidPullMode` is never
+  returned. It exists for symmetry with the other two.
+- **`WithDebounce` makes an `rpi` pin an input.** `go-gpiocdev` requests a
+  debounced line as an input, so `WithMode(gpio.Output)` followed by
+  `WithDebounce` yields an input, and the reverse order drops the debounce.
+  `rpi` follows that rather than reordering the options; `rpiemu` keeps the
+  mode. Debounce is for inputs — do not combine the two.
+- **`StopWatching` and `Close` do not wait for a running callback.** They
+  keep `WatchFunc` from starting on the events still buffered, but a call that
+  already took its event can still be running, or just about to start, when
+  they return. Waiting for it would deadlock a callback that stops its own
+  watch, and telling that case apart needs the goroutine's identity, which Go
+  does not expose. A consumer that tears down what its callback uses must
+  synchronise with the callback itself.
 
 Full API: `go doc github.com/womat/gpio`, `.../rpi`, `.../rpiemu`.

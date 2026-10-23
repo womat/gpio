@@ -3,6 +3,7 @@ package watch
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -362,5 +363,175 @@ func TestStartRacingStop(t *testing.T) {
 
 		wg.Wait()
 		w.Stop()
+	}
+}
+
+// TestCloseEndsTheWatcherForGood checks that Close closes the channel of an
+// active watch like Stop, and that no watch can be started afterwards.
+func TestCloseEndsTheWatcherForGood(t *testing.T) {
+	var w Watcher
+
+	ch, err := w.Start(gpio.RisingEdge, bufferSize)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	w.Close()
+	if _, ok := <-ch; ok {
+		t.Error("the channel is still open after Close")
+	}
+
+	if _, err := w.Start(gpio.RisingEdge, bufferSize); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("Start after Close returned %v, want ErrClosed", err)
+	}
+	if err := w.StartFunc(gpio.RisingEdge, bufferSize, func(gpio.Event) {}); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("StartFunc after Close returned %v, want ErrClosed", err)
+	}
+
+	w.Close() // a second Close is harmless
+}
+
+// TestStartRacingClose is the regression test for a channel that was never
+// closed: a backend's Close found no active watch, a concurrent Start then
+// claimed the watcher, and nothing was left to close its channel - a consumer
+// ranging over it hung forever.
+func TestStartRacingClose(t *testing.T) {
+	for range 200 {
+		var w Watcher
+
+		var ch <-chan gpio.Event
+		var startErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			ch, startErr = w.Start(gpio.RisingEdge, bufferSize)
+		}()
+		go func() {
+			defer wg.Done()
+			w.Close()
+		}()
+
+		wg.Wait()
+
+		switch {
+		case errors.Is(startErr, gpio.ErrClosed):
+			// Close ran first.
+		case startErr != nil:
+			t.Fatalf("Start returned an unexpected error: %v", startErr)
+		default:
+			if _, ok := <-ch; ok {
+				t.Fatal("Start won the race, but Close left its channel open")
+			}
+		}
+	}
+}
+
+// TestStartFuncDeliversInOrder covers the callback variant of Start.
+func TestStartFuncDeliversInOrder(t *testing.T) {
+	var w Watcher
+	got := make(chan gpio.Edge, bufferSize)
+
+	if err := w.StartFunc(gpio.RisingEdge|gpio.FallingEdge, bufferSize, func(evt gpio.Event) {
+		got <- evt.Edge
+	}); err != nil {
+		t.Fatalf("StartFunc: %v", err)
+	}
+	defer w.Stop()
+
+	w.Deliver(rising())
+	w.Deliver(falling())
+
+	for _, want := range []gpio.Edge{gpio.RisingEdge, gpio.FallingEdge} {
+		select {
+		case edge := <-got:
+			if edge != want {
+				t.Errorf("callback got %v, want %v", edge, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("callback never received %v", want)
+		}
+	}
+}
+
+// TestStartFuncRejects checks the errors of StartFunc, and that none of them
+// claims the watcher.
+func TestStartFuncRejects(t *testing.T) {
+	var w Watcher
+	f := func(gpio.Event) {}
+
+	if err := w.StartFunc(gpio.RisingEdge, bufferSize, nil); !errors.Is(err, gpio.ErrNilCallback) {
+		t.Errorf("nil callback: %v, want ErrNilCallback", err)
+	}
+	if err := w.StartFunc(0, bufferSize, f); !errors.Is(err, gpio.ErrInvalidEdgeConfig) {
+		t.Errorf("empty edge mask: %v, want ErrInvalidEdgeConfig", err)
+	}
+	if w.Active() {
+		t.Fatal("a rejected StartFunc claimed the watcher")
+	}
+
+	if _, err := w.Start(gpio.RisingEdge, bufferSize); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer w.Stop()
+	if err := w.StartFunc(gpio.RisingEdge, bufferSize, f); !errors.Is(err, gpio.ErrAlreadyWatching) {
+		t.Errorf("second watcher: %v, want ErrAlreadyWatching", err)
+	}
+}
+
+// TestStartFuncSkipsBufferedEventsAfterStop is the regression test for
+// callbacks that kept arriving after StopWatching or Close had returned: the
+// goroutine drained the whole buffer first. Only the call that already holds
+// its event may still run.
+func TestStartFuncSkipsBufferedEventsAfterStop(t *testing.T) {
+	var w Watcher
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+
+	if err := w.StartFunc(gpio.RisingEdge, bufferSize, func(gpio.Event) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+	}); err != nil {
+		t.Fatalf("StartFunc: %v", err)
+	}
+
+	w.Deliver(rising())
+	<-entered // the first call is under way and holds the goroutine
+	for range 5 {
+		w.Deliver(rising()) // these wait in the buffer
+	}
+
+	w.Stop()
+	close(release)
+	time.Sleep(50 * time.Millisecond) // give a buggy goroutine time to drain
+
+	if n := calls.Load(); n != 1 {
+		t.Errorf("callback ran %d times, want 1: buffered events were delivered after Stop", n)
+	}
+}
+
+// TestStopFromInsideTheCallback guards against the deadlock that waiting for
+// the callback in Stop would cause: a callback that ends its own watch.
+func TestStopFromInsideTheCallback(t *testing.T) {
+	var w Watcher
+	stopped := make(chan struct{})
+
+	if err := w.StartFunc(gpio.RisingEdge, bufferSize, func(gpio.Event) {
+		w.Stop()
+		close(stopped)
+	}); err != nil {
+		t.Fatalf("StartFunc: %v", err)
+	}
+
+	w.Deliver(rising())
+
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop called from the callback did not return")
 	}
 }
