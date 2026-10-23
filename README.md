@@ -249,7 +249,12 @@ Known and deliberately left alone:
   eight syscalls and no guarantee they describe the same instant.
 - **Mode, pull and debounce cannot be changed** after construction. Close the
   pin and request it again.
-- **`ErrInvalidPullMode` is never returned.** It exists for symmetry with the
-  other two.
+- **Invalid option values are ignored.** `WithMode` and `WithPullup` in both
+  backends leave the default in place for an unknown value instead of failing,
+  because an `Option` cannot return an error; changing that would change the
+  option type for every consumer. So `ErrInvalidMode` and `ErrInvalidPullMode`
+  are not used for an invalid option — `ErrInvalidMode` only reports a write
+  to an input, and `ErrInvalidPullMode` is never returned. It exists for
+  symmetry with the other two.
 
 Full API: `go doc github.com/womat/gpio`, `.../rpi`, `.../rpiemu`.
