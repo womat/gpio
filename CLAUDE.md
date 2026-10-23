@@ -72,10 +72,11 @@ means the untestable part is a thin adapter over code that is tested under `-rac
 
 ## Known state
 
-`rpi` has tests only for its pure helpers (`eventTime`, `seqGap`), which build on Linux alone
-and therefore run in CI only; anything touching a line needs a real GPIO chip. Tests that do
-skip unless told which lines to use, so they run on a Pi only: `close_test.go` needs
-`RPI_TEST_LINE` (a free line), `loopback_test.go` needs `RPI_TEST_LOOP` (wired output:input
+`rpi` has tests without a line only for its pure helpers (`eventTime`, `seqGap`), the event
+`handler` and a failing `NewPin`, which build on Linux alone and therefore run in CI only;
+anything touching a line needs a real GPIO chip. Tests that do skip unless told which lines to
+use, so they run on a Pi only: the other tests in `close_test.go` need `RPI_TEST_LINE` (a free
+line), `loopback_test.go` needs `RPI_TEST_LOOP` (wired output:input
 pairs, direct connection first). `GOOS=linux GOARCH=arm64 go test -c ./rpi`, copy the binary
 over, `RPI_TEST_LINE=20 RPI_TEST_LOOP=18:25 ./rpi.test -test.v`. Test against the direct
 connection 18→25 (18 output); the optocouplers (13→6, 12→26) are good for 1 kHz only

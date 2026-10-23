@@ -224,8 +224,9 @@ Coverage: 82.8 % in `gpio`, 90.9 % in `rpiemu`, 100 % in `internal/watch` —
 that last one is the number that matters, since it is the code `rpi` cannot
 test for itself.
 
-In CI, `rpi` is tested only through its pure helpers — the conversion of the
-kernel's edge timestamp and the gap detection from its sequence numbers. The
+In CI, `rpi` is tested only where no line is needed: its pure helpers (the
+conversion of the kernel's edge timestamp and the gap detection from its
+sequence numbers), the event handler and a failing `NewPin`. The
 tests that touch a line skip unless told which lines to use, so they run on a
 Pi only:
 
