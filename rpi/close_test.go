@@ -129,4 +129,8 @@ func TestValueAfterClose(t *testing.T) {
 	if _, err := p.Value(); !errors.Is(err, gpio.ErrClosed) {
 		t.Errorf("Value after Close returned %v, want ErrClosed", err)
 	}
+	// A closed output reports ErrClosed, as in rpiemu, not ErrInvalidMode.
+	if _, err := p.WatchCh(gpio.RisingEdge); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("WatchCh after Close returned %v, want ErrClosed", err)
+	}
 }

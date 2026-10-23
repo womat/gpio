@@ -308,6 +308,9 @@ func (p *pin) WatchFunc(edges gpio.Edge, f func(event gpio.Event)) error {
 // It claims the watcher first and enables edge detection afterwards, so the
 // first event the kernel reports already has somewhere to go.
 func (p *pin) startWatch(edges gpio.Edge, claim func() error) error {
+	if p.closed.Load() {
+		return gpio.ErrClosed // checked first: a closed output is no output any more
+	}
 	if p.output {
 		return gpio.ErrInvalidMode
 	}
