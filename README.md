@@ -290,6 +290,10 @@ Known and deliberately left alone:
   are not used for an invalid option — `ErrInvalidMode` only reports a write
   to an input or a watch on an output, and `ErrInvalidPullMode` is never
   returned. It exists for symmetry with the other two.
+- **A nil `Option` panics in `NewPin`**, in both backends. It is a
+  programmer error, and like the standard library this package does not
+  check for it; an option variable that is only set conditionally must not be
+  passed while still nil.
 - **`WithDebounce` makes an `rpi` pin an input.** `go-gpiocdev` requests a
   debounced line as an input, so `WithMode(gpio.Output)` followed by
   `WithDebounce` yields an input, and the reverse order drops the debounce.
@@ -318,6 +322,12 @@ Known and deliberately left alone:
   detection stays on with nobody listening — nothing breaks, the kernel's
   events are discarded. Closing the gap needs a lock around both calls, for
   three concurrent callers on one pin, which no service has.
+- **`WatchCh` racing `Close` on an `rpi` pin can return the wrong error.**
+  If `Close` releases the line between the watch's claim and its
+  `Reconfigure`, the caller gets `go-gpiocdev`'s `ErrClosed` instead of
+  `gpio.ErrClosed`, so `errors.Is(err, gpio.ErrClosed)` is false. Either way
+  the watch fails and nothing is left running. It needs a `Close` running at
+  the same time as the watch is started, which no service does.
 - **`StopWatching` and `Close` do not wait for a running callback.** They
   keep `WatchFunc` from starting on the events still buffered, but a call that
   already took its event can still be running, or just about to start, when
