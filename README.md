@@ -311,6 +311,13 @@ Known and deliberately left alone:
   they stop watching only to shut down and request a new pin. A new pin is a
   new request to the kernel and never sees events of the old one; otherwise
   drop events older than the `WatchCh` call.
+- **Concurrent `StopWatching` and `WatchCh` on one `rpi` pin are not
+  atomic.** `StopWatching` checks whether a watch is active and acts on it
+  afterwards. Two `StopWatching` racing a `WatchCh` can stop the new watch:
+  `WatchCh` returns no error but a channel that is already closed, and edge
+  detection stays on with nobody listening — nothing breaks, the kernel's
+  events are discarded. Closing the gap needs a lock around both calls, for
+  three concurrent callers on one pin, which no service has.
 - **`StopWatching` and `Close` do not wait for a running callback.** They
   keep `WatchFunc` from starting on the events still buffered, but a call that
   already took its event can still be running, or just about to start, when
