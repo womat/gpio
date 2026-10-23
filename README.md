@@ -181,7 +181,9 @@ pin.Drive(gpio.Low)
 mode — that is what makes the emulator useful for testing *receiving* code,
 such as a line decoder. Only an input can be watched, as on real hardware, so
 the edges a test observes come from `Drive`; debouncing and edge filtering
-apply to them.
+apply to them. The emulator's debounce is a lockout after each reported edge,
+not the kernel's, which reports the level that has settled; the package doc
+shows a sequence where the two differ.
 
 `rpiemu.NewPin` returns `rpiemu.Pin`, which embeds `gpio.Pin`, so it can be
 passed anywhere a `gpio.Pin` is expected. That is also why the emulator is the
@@ -293,6 +295,13 @@ Known and deliberately left alone:
   `WithDebounce` yields an input, and the reverse order drops the debounce.
   `rpi` follows that rather than reordering the options; `rpiemu` keeps the
   mode. Debounce is for inputs — do not combine the two.
+- **`rpiemu` does not debounce like the kernel.** It locks out edges for the
+  debounce period after each reported edge, so an edge within that time is
+  never reported, even when the new level then holds longer than the period;
+  the kernel reports the level that has settled. Rebuilding the kernel's
+  behaviour needs a timer per pin and events that arrive after `Drive` has
+  returned, which every test would then have to wait for. That is done once a
+  consumer's test needs it, not before.
 - **`StopWatching` and `Close` do not wait for a running callback.** They
   keep `WatchFunc` from starting on the events still buffered, but a call that
   already took its event can still be running, or just about to start, when

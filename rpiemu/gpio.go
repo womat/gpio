@@ -12,6 +12,16 @@
 // outside world and works on input pins as well. Drive is what makes the
 // emulator useful for testing receivers, such as a line decoder.
 //
+// # Debounce
+//
+// WithDebounce does not emulate the kernel. The emulator locks out edges for
+// the debounce period after each reported edge: an edge within that time
+// changes the level but is never reported, even if the new level then holds
+// for longer than the period. The kernel instead reports the level that has
+// settled. With a 5 ms debounce, Drive(High), Low 1 ms later and High again
+// 10 ms after that give Rising, Rising here, but Rising, Falling, Rising on a
+// Pi. A test that depends on the difference does not carry over to hardware.
+//
 // # Concurrency
 //
 // A pin is safe for concurrent use. Events are delivered by a single
@@ -168,8 +178,9 @@ func (p *pin) Drive(level gpio.Level) error {
 
 // setLevel applies a new level and emits the resulting edge event, if any.
 //
-// The caller must hold the mutex, which is also what makes delivery safe
-// against a concurrent StopWatching closing the event channel.
+// The caller must hold the mutex, which guards the level and the debounce
+// bookkeeping. Delivery is safe against a concurrent StopWatching through the
+// lock in watch.Watcher, not through this mutex.
 func (p *pin) setLevel(level gpio.Level) error {
 	if level != gpio.High && level != gpio.Low {
 		return gpio.ErrInvalidLevel
@@ -238,7 +249,9 @@ func WithPullup(pull gpio.PullMode) Option {
 	}
 }
 
-// WithDebounce configures hardware debounce for the GPIO Pin during line request.
+// WithDebounce suppresses every edge within d after a reported edge; d <= 0
+// leaves debounce off. This is a lockout, not the kernel's debounce; see
+// Debounce in the package doc.
 func WithDebounce(d time.Duration) Option {
 	return func(p *pin) {
 		if d > 0 {
