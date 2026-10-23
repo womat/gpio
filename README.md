@@ -302,6 +302,15 @@ Known and deliberately left alone:
   behaviour needs a timer per pin and events that arrive after `Drive` has
   returned, which every test would then have to wait for. That is done once a
   consumer's test needs it, not before.
+- **Watching the same `rpi` pin again right away can deliver an old edge.**
+  `StopWatching` switches edge detection off, but events the kernel had
+  queued or go-gpiocdev had read by then still arrive; a `WatchCh` right
+  after can receive one, with a time from before the call. Measured on a
+  Pi 3B+: 1–4 times in 100 restarts at 10 kHz; `Missed` stays right. Filtering
+  them needs a lock around every delivered edge, for a case no service has:
+  they stop watching only to shut down and request a new pin. A new pin is a
+  new request to the kernel and never sees events of the old one; otherwise
+  drop events older than the `WatchCh` call.
 - **`StopWatching` and `Close` do not wait for a running callback.** They
   keep `WatchFunc` from starting on the events still buffered, but a call that
   already took its event can still be running, or just about to start, when
