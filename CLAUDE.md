@@ -29,7 +29,8 @@ prefer it over running the tools by hand.
 Demos: `cd demo/<name>` first, then use its `Makefile`; `make deploy` scp's the binary to
 `$(PI_USER)@$(PI_HOST)`.
 
-There is one branch, `main`; a version is an annotated tag `vX.Y.Z` on it.
+There is one branch, `main`; a version is an annotated tag `vX.Y.Z` on it. Only the tag, no
+GitHub release: the tag message is the release notes (Wolfgang, 23.10.2026).
 
 **This repository always authenticates as `womat`.** The remote goes through the
 `github-priv` host alias from `~/.ssh/config`; a fresh clone needs
