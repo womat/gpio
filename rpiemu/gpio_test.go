@@ -313,6 +313,19 @@ func TestWatchFunc(t *testing.T) {
 	}
 }
 
+// TestWatchFuncRejectsNilCallback checks the sentinel, which callers compare
+// with errors.Is, and that the pin is not claimed by the failed call.
+func TestWatchFuncRejectsNilCallback(t *testing.T) {
+	p, _ := NewPin(25, WithMode(gpio.Input))
+
+	if err := p.WatchFunc(gpio.RisingEdge, nil); !errors.Is(err, gpio.ErrNilCallback) {
+		t.Fatalf("WatchFunc(nil) returned %v, want ErrNilCallback", err)
+	}
+	if _, err := p.WatchCh(gpio.RisingEdge); err != nil {
+		t.Errorf("WatchCh after a rejected WatchFunc: %v", err)
+	}
+}
+
 func TestModeAndPull(t *testing.T) {
 	_, err := NewPin(19,
 		WithMode(gpio.Output),

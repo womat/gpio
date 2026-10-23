@@ -1,6 +1,7 @@
 package rpi
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"testing"
@@ -41,5 +42,23 @@ func TestCloseIsIdempotent(t *testing.T) {
 	}
 	if err := p.Close(); err != nil {
 		t.Errorf("second Close: %v", err)
+	}
+}
+
+// TestWatchFuncRejectsNilCallback checks the sentinel, and that the failed
+// call leaves the pin free for a watcher. It lives here because it needs a
+// real line, like the Close test above.
+func TestWatchFuncRejectsNilCallback(t *testing.T) {
+	p, err := NewPin(testLine(t), WithMode(gpio.Input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if err := p.WatchFunc(gpio.RisingEdge, nil); !errors.Is(err, gpio.ErrNilCallback) {
+		t.Fatalf("WatchFunc(nil) returned %v, want ErrNilCallback", err)
+	}
+	if _, err := p.WatchCh(gpio.RisingEdge); err != nil {
+		t.Errorf("WatchCh after a rejected WatchFunc: %v", err)
 	}
 }

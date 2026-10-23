@@ -247,7 +247,7 @@ func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
 // edges can be a combination of gpio.RisingEdge and gpio.FallingEdge.
 func (p *pin) WatchFunc(edges gpio.Edge, f func(event gpio.Event)) error {
 	if f == nil {
-		return errors.New("rpi: callback must not be nil")
+		return gpio.ErrNilCallback
 	}
 
 	ch, err := p.startWatch(edges)

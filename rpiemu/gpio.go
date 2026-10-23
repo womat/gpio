@@ -50,7 +50,6 @@
 package rpiemu
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -265,7 +264,7 @@ func (p *pin) WatchCh(edges gpio.Edge) (<-chan gpio.Event, error) {
 // The goroutine ends when StopWatching is called or the pin is closed.
 func (p *pin) WatchFunc(edges gpio.Edge, f func(gpio.Event)) error {
 	if f == nil {
-		return errors.New("rpiemu: callback must not be nil")
+		return gpio.ErrNilCallback
 	}
 
 	ch, err := p.WatchCh(edges)

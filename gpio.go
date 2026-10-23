@@ -45,6 +45,7 @@ var ErrInvalidPullMode = errors.New("gpio: invalid pull mode")
 var ErrInvalidMode = errors.New("gpio: invalid mode")
 var ErrInvalidEdgeConfig = errors.New("gpio: invalid edge configuration")
 var ErrAlreadyWatching = errors.New("gpio: already watching")
+var ErrNilCallback = errors.New("gpio: callback must not be nil")
 
 // Level represents the logical signal level of a GPIO pin.
 type Level int

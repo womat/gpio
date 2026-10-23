@@ -72,10 +72,10 @@ exposes its header on a different chip device is not supported.
 | `ErrInvalidLevel` | `SetValue` gets a level that is neither `High` nor `Low` |
 | `ErrInvalidMode` | `SetValue` is called on a pin that is not an output |
 | `ErrInvalidPullMode` | nothing — declared for symmetry, currently unused |
+| `ErrNilCallback` | `WatchFunc` gets a nil callback; the pin is not claimed |
 
 `ErrInvalidLevel` and `ErrInvalidMode` are only produced by `rpiemu`; on real
-hardware the same situations surface as errors from `go-gpiocdev`. A nil
-callback passed to `WatchFunc` is rejected with a plain error, not a sentinel.
+hardware the same situations surface as errors from `go-gpiocdev`.
 
 ## Watching edges
 
