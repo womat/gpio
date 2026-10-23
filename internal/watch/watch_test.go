@@ -421,7 +421,14 @@ func TestStartRacingClose(t *testing.T) {
 		case startErr != nil:
 			t.Fatalf("Start returned an unexpected error: %v", startErr)
 		default:
-			if _, ok := <-ch; ok {
+			// A select, not a plain receive: an open channel would hang
+			// the test until go test's timeout instead of failing it.
+			select {
+			case _, ok := <-ch:
+				if ok {
+					t.Fatal("Start won the race, but Close left its channel open")
+				}
+			case <-time.After(time.Second):
 				t.Fatal("Start won the race, but Close left its channel open")
 			}
 		}

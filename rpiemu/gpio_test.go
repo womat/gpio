@@ -370,6 +370,74 @@ func TestDebounce(t *testing.T) {
 
 }
 
+// TestDebounceIgnoresUnwatchedEdges checks that only a reported edge starts
+// the lockout: a falling edge nobody watches must not hide the rising edge
+// after it.
+func TestDebounceIgnoresUnwatchedEdges(t *testing.T) {
+	p, _ := NewPin(20, WithMode(gpio.Input), WithDebounce(50*time.Millisecond))
+	defer p.Close()
+
+	ch, err := p.WatchCh(gpio.RisingEdge)
+	if err != nil {
+		t.Fatalf("WatchCh failed: %v", err)
+	}
+	events := collect(ch)
+
+	_ = p.Drive(gpio.High) // reported, starts the lockout
+	time.Sleep(60 * time.Millisecond)
+	_ = p.Drive(gpio.Low) // not watched, after the lockout
+	time.Sleep(10 * time.Millisecond)
+	_ = p.Drive(gpio.High) // 70 ms after the last reported edge
+	time.Sleep(20 * time.Millisecond)
+
+	assertEdges(t, events, gpio.RisingEdge, gpio.RisingEdge)
+}
+
+// TestDriveSameLevelIsNoEdge checks that driving the level the line already
+// has is not an edge.
+func TestDriveSameLevelIsNoEdge(t *testing.T) {
+	p, _ := NewPin(21, WithMode(gpio.Input))
+	defer p.Close()
+
+	ch, err := p.WatchCh(gpio.RisingEdge | gpio.FallingEdge)
+	if err != nil {
+		t.Fatalf("WatchCh failed: %v", err)
+	}
+	events := collect(ch)
+
+	for _, level := range []gpio.Level{gpio.High, gpio.High, gpio.Low, gpio.Low} {
+		_ = p.Drive(level)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	assertEdges(t, events, gpio.RisingEdge, gpio.FallingEdge)
+}
+
+// TestEventTimeIsTheDriveTime checks that an event carries the time of the
+// level change, which consumers measure intervals with.
+func TestEventTimeIsTheDriveTime(t *testing.T) {
+	p, _ := NewPin(22, WithMode(gpio.Input))
+	defer p.Close()
+
+	ch, err := p.WatchCh(gpio.RisingEdge)
+	if err != nil {
+		t.Fatalf("WatchCh failed: %v", err)
+	}
+
+	before := time.Now()
+	_ = p.Drive(gpio.High)
+	after := time.Now()
+
+	select {
+	case evt := <-ch:
+		if evt.Time.Before(before) || evt.Time.After(after) {
+			t.Errorf("event time %v, want between %v and %v", evt.Time, before, after)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no event delivered")
+	}
+}
+
 // TestWatchRejectsOutputPins is the regression test for a watch on an output:
 // the emulator delivered its SetValue edges, while on real hardware edge
 // detection silently turned the line into an input that drove nothing.
