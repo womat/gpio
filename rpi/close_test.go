@@ -96,3 +96,23 @@ func TestWatchAfterClose(t *testing.T) {
 		t.Errorf("WatchCh after Close returned %v, want ErrClosed", err)
 	}
 }
+
+// TestValueAfterClose is the regression test for go-gpiocdev's errors after
+// Close: Value reported its own ErrClosed, and SetValue ErrPermissionDenied,
+// because Close releases an output as an input.
+func TestValueAfterClose(t *testing.T) {
+	p, err := NewPin(testLine(t), WithMode(gpio.Output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.SetValue(gpio.High); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("SetValue after Close returned %v, want ErrClosed", err)
+	}
+	if _, err := p.Value(); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("Value after Close returned %v, want ErrClosed", err)
+	}
+}

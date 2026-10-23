@@ -79,7 +79,7 @@ and after a crash, when `Close` never runs.
 | Error | Returned when |
 |---|---|
 | `ErrAlreadyWatching` | a second `WatchCh`/`WatchFunc` while a watcher is active |
-| `ErrClosed` | `WatchCh`/`WatchFunc` on a pin that has been closed |
+| `ErrClosed` | `SetValue`, `Value`, `WatchCh` or `WatchFunc` (and `rpiemu`'s `Drive`) on a pin that has been closed |
 | `ErrInvalidEdgeConfig` | the edge mask selects no edge; the pin is not claimed |
 | `ErrInvalidLevel` | `SetValue` gets a level that is neither `High` nor `Low` |
 | `ErrInvalidMode` | `SetValue` on a pin that is not an output, or `WatchCh`/`WatchFunc` on an output |

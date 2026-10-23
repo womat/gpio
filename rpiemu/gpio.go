@@ -20,7 +20,9 @@
 // # Lifecycle
 //
 // A pin must be closed after use by calling Close(), which also stops an
-// active watcher and closes its event channel.
+// active watcher and closes its event channel. After Close, SetValue, Value,
+// Drive, WatchCh and WatchFunc return gpio.ErrClosed, as they do on real
+// hardware.
 //
 // # Example usage
 //
@@ -67,6 +69,7 @@ type pin struct {
 	debounce  time.Duration // debounce duration for edge events
 	state     gpio.Level    // current logical level
 	lastEvent time.Time     // last event timestamp for debounce
+	closed    bool          // set by Close; SetValue, Value and Drive fail from then on
 
 	watcher watch.Watcher // event delivery, shared with the hardware backend
 }
@@ -118,13 +121,15 @@ func NewPin(n int, opts ...Option) (Pin, error) {
 	return p, nil
 }
 
-// Close disables any active watchers and resets the pin state. A watch
-// started afterwards fails with gpio.ErrClosed, as it does on real hardware.
+// Close disables any active watchers and resets the pin state. SetValue,
+// Value, Drive and a watch started afterwards fail with gpio.ErrClosed, as
+// on real hardware.
 func (p *pin) Close() error {
 	p.watcher.Close()
 
 	p.Lock()
 	defer p.Unlock()
+	p.closed = true
 	p.mode = gpio.Input
 	p.pull = gpio.PullNone
 	p.state = gpio.Low
@@ -139,6 +144,9 @@ func (p *pin) SetValue(level gpio.Level) error {
 	p.Lock()
 	defer p.Unlock()
 
+	if p.closed {
+		return gpio.ErrClosed
+	}
 	if p.mode != gpio.Output {
 		return gpio.ErrInvalidMode
 	}
@@ -152,6 +160,9 @@ func (p *pin) Drive(level gpio.Level) error {
 	p.Lock()
 	defer p.Unlock()
 
+	if p.closed {
+		return gpio.ErrClosed
+	}
 	return p.setLevel(level)
 }
 
@@ -196,6 +207,10 @@ func (p *pin) setLevel(level gpio.Level) error {
 func (p *pin) Value() (gpio.Level, error) {
 	p.Lock()
 	defer p.Unlock()
+
+	if p.closed {
+		return gpio.Low, gpio.ErrClosed
+	}
 	return p.state, nil
 }
 

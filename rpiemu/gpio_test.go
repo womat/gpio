@@ -398,6 +398,24 @@ func TestWatchAfterClose(t *testing.T) {
 	}
 }
 
+// TestValueAfterClose is the regression test for a closed pin that still
+// answered: Value and Drive kept working, and SetValue reported
+// ErrInvalidMode because Close had reset the mode.
+func TestValueAfterClose(t *testing.T) {
+	p, _ := NewPin(27, WithMode(gpio.Output))
+	_ = p.Close()
+
+	if err := p.SetValue(gpio.High); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("SetValue after Close returned %v, want ErrClosed", err)
+	}
+	if _, err := p.Value(); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("Value after Close returned %v, want ErrClosed", err)
+	}
+	if err := p.Drive(gpio.High); !errors.Is(err, gpio.ErrClosed) {
+		t.Errorf("Drive after Close returned %v, want ErrClosed", err)
+	}
+}
+
 // TestWatchFuncStopsAtClose is the regression test for callbacks that kept
 // arriving after Close had returned, one for every event still buffered.
 func TestWatchFuncStopsAtClose(t *testing.T) {

@@ -103,7 +103,8 @@ type Event struct {
 
 // Pin defines the interface for GPIO pin operations.
 type Pin interface {
-	// Close releases the GPIO pin.
+	// Close releases the GPIO pin. From then on SetValue, Value, WatchCh
+	// and WatchFunc return ErrClosed; a closed pin cannot be reopened.
 	Close() error
 
 	// Value access

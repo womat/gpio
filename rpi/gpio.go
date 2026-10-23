@@ -42,7 +42,8 @@
 // releases the underlying Line as an input, so an output stops driving, and
 // disables event delivery. The pull is left as it was; the level of the
 // released line depends on the external circuit. Close is idempotent and may
-// be called multiple times.
+// be called multiple times. After Close, SetValue, Value, WatchCh and
+// WatchFunc return gpio.ErrClosed.
 //
 // # Example usage
 //
@@ -172,8 +173,8 @@ func WithDebounce(d time.Duration) Option {
 // line as an input - also an output, which then stops driving. The pull is not
 // changed, so where an open input would switch something (a relay driver),
 // the circuit needs a pull resistor to the safe level. Close is idempotent
-// and can be called multiple times safely. A watch started afterwards fails
-// with gpio.ErrClosed.
+// and can be called multiple times safely. SetValue, Value and a watch
+// started afterwards fail with gpio.ErrClosed.
 func (p *pin) Close() error {
 	// go-gpiocdev reports "already closed" for a released line, so only the
 	// first call may touch it.
@@ -206,11 +207,17 @@ func (p *pin) Close() error {
 // SetValue sets the logical output level of the GPIO Pin.
 // The Pin must currently be set as an output.
 func (p *pin) SetValue(n gpio.Level) error {
+	if p.closed.Load() {
+		return gpio.ErrClosed // go-gpiocdev would report ErrPermissionDenied: Close made it an input
+	}
 	return p.gpioLine.SetValue(int(n))
 }
 
 // Value returns the current logical level of the GPIO Pin.
 func (p *pin) Value() (gpio.Level, error) {
+	if p.closed.Load() {
+		return gpio.Low, gpio.ErrClosed
+	}
 	l, err := p.gpioLine.Value()
 	return gpio.Level(l), err
 }
