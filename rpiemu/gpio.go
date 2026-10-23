@@ -84,6 +84,8 @@ type pin struct {
 	watcher watch.Watcher // event delivery, shared with the hardware backend
 }
 
+// Option configures a Pin in NewPin. An unknown value is ignored; see Not
+// addressed in the README.
 type Option func(*pin)
 
 // Pin is an emulated GPIO pin.
@@ -97,9 +99,8 @@ type Pin interface {
 	// Drive simulates an external level change on the line.
 	//
 	// Unlike SetValue it works regardless of the configured mode, so code
-	// that reacts to input edges can be tested without hardware. Edge
-	// events, debouncing and edge filtering behave exactly as they do for
-	// a level change driven by SetValue.
+	// that reacts to input edges can be tested without hardware.
+	// Debouncing and edge filtering apply.
 	Drive(level gpio.Level) error
 }
 
@@ -148,8 +149,7 @@ func (p *pin) Close() error {
 	return nil
 }
 
-// SetValue sets the pin's logical level (output only) and triggers edge events if watching.
-// Debouncing is respected.
+// SetValue sets the level of an output pin.
 func (p *pin) SetValue(level gpio.Level) error {
 	p.Lock()
 	defer p.Unlock()
@@ -225,6 +225,8 @@ func (p *pin) Value() (gpio.Level, error) {
 	return p.state, nil
 }
 
+// WithMode configures the pin as an input or output; an unknown mode is
+// ignored.
 func WithMode(mode gpio.Mode) Option {
 	return func(p *pin) {
 		if mode != gpio.Input && mode != gpio.Output {
@@ -237,6 +239,8 @@ func WithMode(mode gpio.Mode) Option {
 	}
 }
 
+// WithPullup records the pull resistor (none, up or down); an unknown value
+// is ignored.
 func WithPullup(pull gpio.PullMode) Option {
 	return func(p *pin) {
 		if pull != gpio.PullNone && pull != gpio.PullUp && pull != gpio.PullDown {

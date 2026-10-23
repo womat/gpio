@@ -4,7 +4,7 @@
 // This package interacts with GPIO lines via the Linux character device
 // interface (gpiod). It allows configuring Pins as input or output,
 // reading and writing logical levels, configuring pull resistors,
-// enabling edge detection, and setting hardware debounce.
+// enabling edge detection, and setting kernel debounce.
 //
 // A Pin represents a single GPIO line on the Raspberry Pi. Internally,
 // this is a gpiod Line object, but the interface abstracts it as a Pin.
@@ -80,6 +80,8 @@ import (
 // Compile-time check
 var _ gpio.Pin = (*pin)(nil)
 
+// Option configures a Pin in NewPin. An unknown value is ignored; see Not
+// addressed in the README.
 type Option func(*pin, *[]gpiod.LineReqOption)
 
 // defaultBufferSize defines the size of the buffered channel for GPIO events.
@@ -90,8 +92,8 @@ const Chip = "gpiochip0"
 
 // pin represents a single GPIO pin.
 //
-// It allows reading/writing the pin, configuring mode/pull/debounce,
-// and watching for edge events via a channel or callback.
+// It allows reading/writing the pin and watching for edge events via a
+// channel or callback; mode, pull and debounce are set only by NewPin.
 type pin struct {
 	gpioLine *gpiod.Line   // underlying gpiod line
 	watcher  watch.Watcher // event delivery, shared with the emulator backend
@@ -134,6 +136,8 @@ func NewPin(n int, opts ...Option) (gpio.Pin, error) {
 	return p, nil
 }
 
+// WithMode requests the line as an input or output; an unknown mode is ignored.
+// A later WithDebounce turns an output into an input.
 func WithMode(m gpio.Mode) Option {
 	return func(p *pin, opts *[]gpiod.LineReqOption) {
 		switch m {
@@ -147,6 +151,8 @@ func WithMode(m gpio.Mode) Option {
 	}
 }
 
+// WithPullup sets the line's bias (none, up or down); an unknown value is
+// ignored.
 func WithPullup(pull gpio.PullMode) Option {
 	return func(p *pin, opts *[]gpiod.LineReqOption) {
 		switch pull {
@@ -349,7 +355,7 @@ func (p *pin) StopWatching() error {
 
 // handler is called by gpiod when an edge occurs.
 //
-// It is a hot path and must remain lock-free to avoid blocking the kernel event handler.
+// It is a hot path and must never block on the consumer; Deliver drops instead.
 // It delivers the event to the channel or callback, counting dropped events.
 func (p *pin) handler(evt gpiod.LineEvent) {
 	if evt.Type != gpiod.LineEventRisingEdge && evt.Type != gpiod.LineEventFallingEdge {
