@@ -63,6 +63,17 @@ emulator](#the-emulator)).
 `rpi.Chip` (`"gpiochip0"`). It is a constant, not an option — a board that
 exposes its header on a different chip device is not supported.
 
+`rpi`'s `Close` releases the line as an input, outputs included, so a released
+output stops driving — the same state the Pi's pins are in after boot. Its
+pull is not changed: an output requested without `WithPullup` keeps whatever
+bias the pin has (on a Pi by default pull-up for GPIO 0–8 and pull-down from
+9, unless something has changed it). Whether that rest state is safe depends
+on the circuit, not on this package: a driver with a high-impedance input,
+such as a transistor without a base pull-down or an active-low relay module,
+can switch or chatter on an open input. Put an external pull resistor to the
+safe level on such a line; it also covers the time before the service starts
+and after a crash, when `Close` never runs.
+
 ### Sentinel errors
 
 | Error | Returned when |

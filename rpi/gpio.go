@@ -39,8 +39,10 @@
 // # Lifecycle
 //
 // A Pin must be closed after use by calling Close(). Closing the Pin
-// releases the underlying Line and disables event delivery.
-// Close is idempotent and may be called multiple times.
+// releases the underlying Line as an input, so an output stops driving, and
+// disables event delivery. The pull is left as it was; the level of the
+// released line depends on the external circuit. Close is idempotent and may
+// be called multiple times.
 //
 // # Example usage
 //
@@ -166,9 +168,12 @@ func WithDebounce(d time.Duration) Option {
 	}
 }
 
-// Close stops any active watcher, disables edge detection, and releases the line.
-// Close is idempotent and can be called multiple times safely. A watch
-// started afterwards fails with gpio.ErrClosed.
+// Close stops any active watcher, disables edge detection, and releases the
+// line as an input - also an output, which then stops driving. The pull is not
+// changed, so where an open input would switch something (a relay driver),
+// the circuit needs a pull resistor to the safe level. Close is idempotent
+// and can be called multiple times safely. A watch started afterwards fails
+// with gpio.ErrClosed.
 func (p *pin) Close() error {
 	// go-gpiocdev reports "already closed" for a released line, so only the
 	// first call may touch it.
