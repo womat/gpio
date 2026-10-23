@@ -14,7 +14,8 @@ import (
 // It deliberately carries no "Output:" comment: the example needs a real GPIO
 // chip, so it is compiled as documentation but never executed by go test.
 func Example_usage() {
-	// Configure as output and set high
+	// Configure as output and set high; the pull-up keeps the line high once
+	// Close releases it as an input.
 	out, err := rpi.NewPin(17, rpi.WithMode(gpio.Output), rpi.WithPullup(gpio.PullUp))
 	if err != nil {
 		log.Fatal(err)
