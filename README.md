@@ -134,6 +134,17 @@ Rules that hold for both backends:
   still: plan for at most 1 kHz signal frequency there. The Pi kept detecting
   every edge from the EL817 and 4N35 on the test bench up to 10 kHz edges per
   second, but that counts edges, not the shape of the signal behind them.
+- **Debounce on a Pi works in kernel ticks.** The GPIO controller has no
+  debounce of its own; the kernel debounces with a timer that counts whole
+  ticks, 4 ms at the usual `CONFIG_HZ=250`. On `rpi`, `WithDebounce` therefore
+  rounds up to a tick, and an event is stamped when the timer runs, not at its
+  edge. Every period up to 4 ms gives the same delay; above that, the delay
+  rises in 4 ms steps. Shortest delay after the edge, measured on Pi 3B+,
+  Linux 6.18.50+rpt-rpi-v8, `CONFIG_HZ=250`: 4 ms for 100 µs, 1 ms and 4 ms
+  asked for, 8 ms for 5 ms, 12 ms for 10 ms, 20 ms for 20 ms; with 1 ms, edges
+  5 ms apart were swallowed. Debounce suits a contact; a signal whose
+  intervals matter, a pulse counter deriving a rate or a line decoder, should
+  go without it.
 - **`WatchFunc` delivers from a single goroutine**, so the callback is never
   called concurrently with itself and sees the edges in the order they
   occurred. A blocking callback stalls delivery and eventually costs events; it
@@ -218,8 +229,9 @@ one that tests `rpi`; optocoupler pairs can be appended
 their 1 kHz limit. The loopback tests check
 that every edge arrives once, in the right direction and in the time window of
 the `SetValue` that caused it, that intervals never run backwards at 400 kHz,
-that the loss accounting is exact at 10 kHz, and that `StopWatching` and
-`Close` end a watch. The burst tests use the first pair only, so put the direct
+that the loss accounting is exact at 10 kHz, that `WithDebounce` suppresses
+pulses shorter than its period, and that `StopWatching` and `Close` end a
+watch. The burst tests use the first pair only, so put the direct
 connection first. The race detector needs cgo and is not available in a cross
 build.
 

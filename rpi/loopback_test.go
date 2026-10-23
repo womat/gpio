@@ -50,7 +50,8 @@ type loopback struct {
 
 // openLoop requests both lines of a pair, leaves the output low, and measures
 // whether the path inverts. It fails the test if the input does not follow.
-func openLoop(t *testing.T, pair [2]int) *loopback {
+// inOpts are added to the input's options.
+func openLoop(t *testing.T, pair [2]int, inOpts ...Option) *loopback {
 	t.Helper()
 	out, err := NewPin(pair[0], WithMode(gpio.Output))
 	if err != nil {
@@ -60,7 +61,7 @@ func openLoop(t *testing.T, pair [2]int) *loopback {
 		out.SetValue(gpio.Low)
 		out.Close()
 	})
-	in, err := NewPin(pair[1], WithMode(gpio.Input), WithPullup(gpio.PullUp))
+	in, err := NewPin(pair[1], append([]Option{WithMode(gpio.Input), WithPullup(gpio.PullUp)}, inOpts...)...)
 	if err != nil {
 		t.Fatalf("input %d: %v", pair[1], err)
 	}
@@ -291,6 +292,36 @@ func TestLoopbackPaced(t *testing.T) {
 		t.Errorf("sum of Missed %d exceeds DroppedEvents %d", missed, dropped)
 	}
 	t.Logf("delivered %d, dropped %d, reported as Missed %d", len(events), dropped, missed)
+}
+
+// TestLoopbackDebounce checks that WithDebounce reaches the kernel: edges
+// spaced well beyond the debounce period all arrive, pulses well inside it
+// none at all - after an even number of changes the line is back where it
+// started, so the debounced level never changes.
+//
+// The kernel debounces in whole ticks, so the 1 ms asked for is at least 4 ms
+// at CONFIG_HZ=250, and on a Pi 3B+ (Linux 6.18) only 2 of 20 edges 5 ms apart
+// arrived. The slow edges are 20 ms apart; with 1 ms asked for, all edges
+// arrived from 10-11 ms apart on.
+func TestLoopbackDebounce(t *testing.T) {
+	lb := openLoop(t, loopPairs(t)[0], WithDebounce(time.Millisecond))
+	const n = 20
+
+	if info := lb.in.Info(); !strings.Contains(info, "Debounced: true") {
+		t.Errorf("Info() = %s, want Debounced: true", info)
+	}
+
+	stop := record(t, lb.in)
+	toggle(t, lb.out, n, 20*time.Millisecond)
+	if got := len(stop()); got != n {
+		t.Errorf("edges %v apart: %d events, want %d", 20*time.Millisecond, got, n)
+	}
+
+	stop = record(t, lb.in)
+	toggle(t, lb.out, n, 50*time.Microsecond)
+	if got := len(stop()); got != 0 {
+		t.Errorf("edges %v apart: %d events, want 0", 50*time.Microsecond, got)
+	}
 }
 
 // TestLoopbackRewatch checks that edges while nobody watches are neither

@@ -23,8 +23,13 @@
 // reference between both clocks is renewed. The time carries Go's monotonic
 // clock reading, which keeps such intervals correct across wall-clock steps
 // (NTP, boards without RTC); the wall time follows such a step within a
-// second. With hardware debounce, the kernel stamps the edge once the
-// debounce period has passed; this constant offset cancels out in intervals.
+// second. With debounce, the kernel stamps the edge when its debounce timer
+// runs. The Pi has no debounce in hardware, and the kernel's timer counts
+// whole ticks (4 ms at CONFIG_HZ=250): the period is rounded up to a tick.
+// Every period up to 4 ms gives the same delay; above that, the delay rises
+// in 4 ms steps. Shortest delay after the edge, measured on Pi 3B+, Linux
+// 6.18.50+rpt-rpi-v8, CONFIG_HZ=250: 4 ms for 100 µs, 1 ms and 4 ms asked
+// for, 8 ms for 5 ms, 12 ms for 10 ms, 20 ms for 20 ms.
 //
 // gpio.Event.Missed also counts edges the kernel lost because its own event
 // buffer overflowed, detected through the per-line sequence number the kernel
@@ -150,7 +155,8 @@ func WithPullup(pull gpio.PullMode) Option {
 	}
 }
 
-// WithDebounce configures hardware debounce for the GPIO Pin during line request.
+// WithDebounce configures debounce for the GPIO Pin during line request. On a
+// Pi the kernel does it in whole ticks; see Event time in the package doc.
 func WithDebounce(d time.Duration) Option {
 	return func(p *pin, opts *[]gpiod.LineReqOption) {
 		if d > 0 {
