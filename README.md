@@ -139,8 +139,11 @@ Rules that hold for both backends:
   50 kHz the board merges edges before the kernel numbers them, so neither
   `Missed` nor `DroppedEvents()` can count them, and two consecutive events may
   report the same direction. Measured in edges per second on a Pi 3B+
-  (Linux 6.18, direct loopback): nothing lost at 10 kHz, now and then one edge
-  in 2000 at 20 kHz, a few in 4000 at 50 kHz, about 60 % at 400 kHz. Keep
+  (Linux 6.18, direct loopback): at 10 kHz, about one run of 2000 edges in a
+  hundred lost edges that neither count reports — mostly up to a dozen right
+  after the watch started, now and then a single one later, when an interrupt
+  came late (open, see `docs/review-2026-10.md`); now and then one edge in
+  2000 at 20 kHz, a few in 4000 at 50 kHz, about 60 % at 400 kHz. Keep
   signals well below that rate. An input behind an optocoupler is slower
   still: plan for at most 1 kHz signal frequency there. The Pi kept detecting
   every edge from the EL817 and 4N35 on the test bench up to 10 kHz edges per
@@ -243,7 +246,8 @@ one that tests `rpi`; optocoupler pairs can be appended
 their 1 kHz limit. The loopback tests check
 that every edge arrives once, in the right direction and in the time window of
 the `SetValue` that caused it, that intervals never run backwards at 400 kHz,
-that the loss accounting is exact at 10 kHz, that `WithDebounce` suppresses
+that at 10 kHz every edge is delivered or counted as lost (an edge lost
+unseen fails the test, see above), that `WithDebounce` suppresses
 pulses shorter than its period, and that `StopWatching` and `Close` end a
 watch. The burst tests use the first pair only, so put the direct
 connection first. The race detector needs cgo and is not available in a cross

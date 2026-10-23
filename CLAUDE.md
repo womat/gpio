@@ -82,8 +82,10 @@ over, `RPI_TEST_LINE=20 RPI_TEST_LOOP=18:25 ./rpi.test -test.v`. Test against th
 connection 18→25 (18 output); the optocouplers (13→6, 12→26) are good for 1 kHz only
 (Wolfgang, 23.10.2026) and may be appended for the slow edge test. The bench is the
 Pi 3B+ `pi3b` (ssh alias, user `pv`), wired as `demo/wirecheck` describes. Do not assert exact
-edge counts above 10 kHz (edges per second): the Pi merges faster edges before the kernel numbers them (measured
-in `TestLoopbackBurst`'s comment).
+edge counts at or above 10 kHz (edges per second): the Pi merges faster edges before the kernel numbers them (measured
+in `TestLoopbackBurst`'s comment), and at 10 kHz about one run in 100 loses edges unseen,
+so `TestLoopbackPaced` fails now and then — known and open, not a regression (review 2026-10,
+section 1, *Still open*).
 Its example is compiled but carries no `Output:` comment, so `go test` does not try to run it.
 
 Linter configuration is `.golangci.yml`; the demo modules find it by walking up. `errcheck`
