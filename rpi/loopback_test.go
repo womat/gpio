@@ -40,8 +40,10 @@ func loopPairs(t *testing.T) [][2]int {
 }
 
 // settle is how long a level change takes to reach the input, with room to
-// spare for the slower optocoupler.
-const settle = 10 * time.Millisecond
+// spare for the slower optocoupler and for a debounced input: on a Pi 3B+
+// with 1 ms debounce, events came up to 11 ms after the change, and 10 ms
+// here failed TestLoopbackDebounce in about one run in ten.
+const settle = 50 * time.Millisecond
 
 type loopback struct {
 	out, in  gpio.Pin
