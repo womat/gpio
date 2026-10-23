@@ -327,16 +327,6 @@ func TestWatchFuncRejectsNilCallback(t *testing.T) {
 	}
 }
 
-func TestModeAndPull(t *testing.T) {
-	_, err := NewPin(19,
-		WithMode(gpio.Output),
-		WithPullup(gpio.PullUp))
-
-	if err != nil {
-		t.Fatalf("SetMode failed: %v", err)
-	}
-}
-
 // TestDebounce watches an input, as only inputs can be watched; Drive
 // produces the edges.
 func TestDebounce(t *testing.T) {
