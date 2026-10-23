@@ -60,6 +60,10 @@ means the untestable part is a thin adapter over code that is tested under `-rac
 - The package doc comment with a runnable `# Example usage` section lives in the package's
   main file, and `README.md` covers all three packages; keep both updated when the API
   changes. The README ends with a *Not addressed* section — decisions against a fix go there.
+- Docs and comments do not point to packages in other repositories as examples
+  ("such as the decoder in …"); say what kind of code it is ("a line decoder").
+  Such packages move — the Manchester decoder went from golib to
+  `womat/manchester` — and the pointer goes stale unnoticed.
 - Sentinel errors are exported vars prefixed `gpio:`, compared with `errors.Is`. Don't change
   an existing message — services consume this module.
 - Every `Pin` has an explicit `Close()` that callers must defer.

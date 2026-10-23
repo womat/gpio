@@ -156,10 +156,10 @@ pin.Drive(gpio.Low)
 
 `SetValue` behaves like real hardware and refuses to write to an input pin.
 `Drive` stands in for the outside world and works regardless of the configured
-mode — that is what makes the emulator useful for testing *receiving* code such
-as the Manchester decoder in `github.com/womat/golib/manchester/decoder`. Only an input can be watched, as
-on real hardware, so the edges a test observes come from `Drive`; debouncing
-and edge filtering apply to them.
+mode — that is what makes the emulator useful for testing *receiving* code,
+such as a line decoder. Only an input can be watched, as on real hardware, so
+the edges a test observes come from `Drive`; debouncing and edge filtering
+apply to them.
 
 `rpiemu.NewPin` returns `rpiemu.Pin`, which embeds `gpio.Pin`, so it can be
 passed anywhere a `gpio.Pin` is expected. That is also why the emulator is the
