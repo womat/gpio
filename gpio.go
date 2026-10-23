@@ -107,12 +107,15 @@ type Pin interface {
 	// and WatchFunc return ErrClosed; a closed pin cannot be reopened.
 	Close() error
 
-	// Value access
+	// SetValue sets the level of an output pin.
 	SetValue(level Level) error
+	// Value returns the current level of the pin.
 	Value() (Level, error)
 
-	// Metadata
+	// Number returns the line offset, the BCM number on a Raspberry Pi.
 	Number() int
+	// Info returns diagnostic text; it differs per backend and is not meant
+	// to be parsed.
 	Info() string
 
 	// WatchCh starts monitoring the pin for the specified edge transitions.
@@ -131,7 +134,7 @@ type Pin interface {
 	// Events still buffered when StopWatching or Close runs are not passed
 	// to f; a call already under way can still be running when they return.
 	WatchFunc(edges Edge, f func(event Event)) error
-	// StopWatching stops an active Watch operation.
+	// StopWatching stops an active WatchCh or WatchFunc.
 	// It is safe to call even if no watcher is active.
 	StopWatching() error
 	// DroppedEvents returns the number of events that were lost, due to

@@ -249,7 +249,7 @@ watch. The burst tests use the first pair only, so put the direct
 connection first. The race detector needs cgo and is not available in a cross
 build.
 
-The package example is compiled as documentation but deliberately carries no
+`rpi`'s package example is compiled as documentation but deliberately carries no
 `Output:` comment, so `go test` does not try to run it.
 
 ## Demos

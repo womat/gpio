@@ -50,15 +50,14 @@
 //	    log.Fatal(err)
 //	}
 //
-//	go func() {
-//	    for evt := range events {
-//	        fmt.Println("GPIO Event:", evt.Edge, "at", evt.Time.Format("15:04:05.000"))
+//	// Simulate an external signal and read the edge each change causes.
+//	for _, level := range []gpio.Level{gpio.High, gpio.Low} {
+//	    if err := pin.Drive(level); err != nil {
+//	        log.Fatal(err)
 //	    }
-//	}()
-//
-//	// Simulate an external signal.
-//	_ = pin.Drive(gpio.High)
-//	_ = pin.Drive(gpio.Low)
+//	    evt := <-events
+//	    fmt.Println(evt.Edge, "missed:", evt.Missed)
+//	}
 package rpiemu
 
 import (

@@ -11,7 +11,8 @@
 //
 // # Concurrency
 //
-// A Pin is safe for concurrent use.
+// A Pin is safe for concurrent use; see Not addressed in the README for two
+// races between watch calls.
 // Event delivery occurs asynchronously via the internal gpiod event handler.
 //
 // # Event time
@@ -87,7 +88,7 @@ type Option func(*pin, *[]gpiod.LineReqOption)
 // defaultBufferSize defines the size of the buffered channel for GPIO events.
 const defaultBufferSize = 32
 
-// Chip defines the default GPIO chip device used to request Pins.
+// Chip is the GPIO chip all pins are requested from.
 const Chip = "gpiochip0"
 
 // pin represents a single GPIO pin.
@@ -111,7 +112,8 @@ type pin struct {
 
 // NewPin requests a GPIO line from the default chip and returns a gpio.Pin.
 //
-// The line is initially configured as input with edge detection disabled.
+// The line is configured as an input unless WithMode says otherwise, with
+// edge detection disabled.
 // On failure it returns a nil Pin, so the error must be checked before the
 // result is used or closed.
 func NewPin(n int, opts ...Option) (gpio.Pin, error) {
@@ -211,7 +213,7 @@ func (p *pin) Close() error {
 }
 
 // SetValue sets the logical output level of the GPIO Pin.
-// The Pin must currently be set as an output.
+// The Pin must have been requested as an output.
 func (p *pin) SetValue(n gpio.Level) error {
 	if p.closed.Load() {
 		return gpio.ErrClosed // go-gpiocdev would report ErrPermissionDenied: Close made it an input
