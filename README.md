@@ -217,9 +217,9 @@ go test -race . ./rpiemu/ ./internal/...  # everything except rpi
 GOOS=linux GOARCH=arm64 go vet ./...      # includes rpi
 ```
 
-`scripts/check.sh` runs `go fix`, `go vet`, `golangci-lint` and `govulncheck`
-over this module and the demos, with `GOOS=linux` by default; `--check`
-reports pending `go fix` work without writing, `--skip=vuln` drops the step
+`scripts/check.sh` runs `go fix`, `go mod tidy`, `go vet`, `golangci-lint` and
+`govulncheck` over this module and the demos, with `GOOS=linux` by default;
+`--check` reports pending `go fix` and `go mod tidy` work without writing, `--skip=vuln` drops the step
 that needs a network. CI (`.github/workflows/ci.yml`) runs on Linux, where
 `rpi` builds natively.
 
