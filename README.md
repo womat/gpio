@@ -142,7 +142,7 @@ Rules that hold for both backends:
   (Linux 6.18, direct loopback): at 10 kHz, about one run of 2000 edges in a
   hundred lost edges that neither count reports — mostly up to a dozen right
   after the watch started, now and then a single one later, when an interrupt
-  came late (open, see `docs/review-2026-10.md`); now and then one edge in
+  came late (open, see *Not addressed*); now and then one edge in
   2000 at 20 kHz, a few in 4000 at 50 kHz, about 60 % at 400 kHz. Keep
   signals well below that rate. An input behind an optocoupler is slower
   still: plan for at most 1 kHz signal frequency there. The Pi kept detecting
@@ -320,6 +320,21 @@ Known and deliberately left alone:
   they stop watching only to shut down and request a new pin. A new pin is a
   new request to the kernel and never sees events of the old one; otherwise
   drop events older than the `WatchCh` call.
+- **Edges lost unseen at 10 kHz are not solved yet.** Measured on a Pi 3B+
+  (18→25, `TestLoopbackPaced` alone): 13 failed runs in 1100. Logging 9 of
+  them showed three effects. *Start of the watch* (5 of 9): 1–12 edges are
+  missing before the first event; most likely the kernel's event buffer (16
+  per line, 1.6 ms at 10 kHz) overflows before go-gpiocdev's reader runs,
+  unseen because a watch starts with no sequence number to compare with.
+  *Late interrupt* (3 of 9): one edge missing and a repeated direction, after
+  250–450 µs instead of 100 µs; merged before the kernel numbers them, this
+  package cannot see it. *Wrong direction* (1 of 9): all edges delivered, but
+  Rising three times in a row, probably a late level reading in the kernel.
+  Ways out, none decided: in the test, wait after starting the watch,
+  tolerate a small shortfall and only log repeated directions; in `rpi`, a
+  larger kernel buffer (go-gpiocdev's `WithEventBufferSize`) or keeping the
+  sequence number across a watch restart — the latter has to be checked
+  against the old edge of a stopped watch (previous point).
 - **Concurrent `StopWatching` and `WatchCh` on one `rpi` pin are not
   atomic.** `StopWatching` checks whether a watch is active and acts on it
   afterwards. Two `StopWatching` racing a `WatchCh` can stop the new watch:

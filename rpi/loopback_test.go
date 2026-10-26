@@ -260,7 +260,7 @@ func TestLoopbackBurst(t *testing.T) {
 // TestLoopbackPaced toggles the first pair at 10 kHz, where the kernel sees
 // nearly every edge (measured on a Pi 3B+: about one run in a hundred loses
 // edges unseen, mostly right after the watch starts, and fails this test -
-// open, see docs/review-2026-10.md; now and then one in 2000 at 20 kHz), and
+// open, see the README, Not addressed; now and then one in 2000 at 20 kHz), and
 // checks the
 // accounting exactly: every edge is either delivered or counted as dropped,
 // and each event's Missed agrees with its direction.
