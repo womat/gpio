@@ -4,5 +4,5 @@ go 1.27
 
 require (
 	github.com/warthog618/go-gpiocdev v0.10.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
